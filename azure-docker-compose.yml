@@ -1,0 +1,38 @@
+version: '3'
+
+services:
+  frontend:
+    image: ${DOCKER_REGISTRY_SERVER}/${PROJECT_NAME}-frontend:${IMAGE_TAG}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+        - REACT_APP_AZURE_SEARCH_ENDPOINT=${AZURE_SEARCH_ENDPOINT}
+        - REACT_APP_AZURE_STORAGE_ENDPOINT=${AZURE_STORAGE_ENDPOINT}
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_AZURE_ENABLED=true
+
+  backend:
+    image: ${DOCKER_REGISTRY_SERVER}/${PROJECT_NAME}-backend:${IMAGE_TAG}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_SEARCH_ENDPOINT=${AZURE_SEARCH_ENDPOINT}
+      - AZURE_SEARCH_API_KEY=${AZURE_SEARCH_API_KEY}
+      - AZURE_SEARCH_INDEX=${AZURE_SEARCH_INDEX}
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
