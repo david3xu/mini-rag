@@ -39,15 +39,41 @@ pip install llama-cpp-python --prefer-binary
 ### Model Acquisition Strategy
 
 ```powershell
+# Create models directory if it doesn't exist
+mkdir -p models/embeddings
+
+# Download recommended model (Q4_0 - balanced size/quality)
+curl -L "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_0.gguf" -o "models/phi-2.gguf"
+
+# Alternative using wget
+# wget "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_0.gguf" -O "models/phi-2.gguf"
+
 # Download lightweight embedding model
 python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('sentence-transformers/paraphrase-MiniLM-L3-v2'); model.save('models/embeddings/paraphrase-MiniLM-L3-v2')"
 
 # Download optimized LLM (Option 1: PowerShell)
+# Make sure models directory exists
+mkdir -p models
+
+# Download recommended model (Q4_0 - balanced size/quality)
 Invoke-WebRequest -Uri "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_0.gguf" -OutFile "models\phi-2.gguf"
+
+# Alternative models by size and quality:
+# Smallest size (lowest quality)
+# Invoke-WebRequest -Uri "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q2_K.gguf" -OutFile "models\phi-2.gguf"
+
+# Medium size and quality
+# Invoke-WebRequest -Uri "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf" -OutFile "models\phi-2.gguf"
+
+# Higher quality (larger file)
+# Invoke-WebRequest -Uri "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q5_K_M.gguf" -OutFile "models\phi-2.gguf"
+
+# Best quality (largest file)
+# Invoke-WebRequest -Uri "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q8_0.gguf" -OutFile "models\phi-2.gguf"
 
 # Download LLM (Option 2: Manual)
 # Visit: https://huggingface.co/TheBloke/phi-2-GGUF/tree/main
-# Download: phi-2.Q4_0.gguf (approximately 1.5GB)
+# Download: phi-2.Q4_0.gguf (approximately 1.5GB) or another quantization
 ```
 
 ## System Configuration
