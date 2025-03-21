@@ -2,5 +2,12 @@ node_modules/
 *.log
 dist/
 
+models/**/*
+!models/**/*/
+!models/**/.gitkeep
+
+.env.local 
+.venv/
+
 *.md 
 !README.md
