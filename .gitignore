@@ -8,6 +8,3 @@ models/**/*
 
 .env.local 
 .venv/
-
-*.md 
-!README.md
