@@ -1,0 +1,97 @@
+/* 
+ * Chat Input Component Styles
+ * Follows BEM naming convention for CSS class names
+ */
+
+ .chat-input {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border-top: 1px solid #e0e0e0;
+  background-color: #f9f9f9;
+}
+
+.chat-input__textarea-container {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.chat-input__textarea {
+  width: 100%;
+  min-height: 40px;
+  max-height: 150px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+  resize: none;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+  outline: none;
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+
+.chat-input__textarea:focus {
+  border-color: #0078d4;
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+}
+
+.chat-input__textarea:disabled {
+  background-color: #f0f0f0;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.chat-input__button {
+  align-self: flex-end;
+  padding: 8px 16px;
+  border-radius: 4px;
+  background-color: #0078d4;
+  color: white;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.chat-input__button:hover:not(:disabled) {
+  background-color: #106ebe;
+}
+
+.chat-input__button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.5);
+}
+
+.chat-input__button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.chat-input__help {
+  font-size: 12px;
+  color: #666;
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* Responsive adjustments */
+@media (min-width: 768px) {
+  .chat-input {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+  
+  .chat-input__textarea-container {
+    flex: 1;
+    margin-bottom: 0;
+    margin-right: 8px;
+  }
+  
+  .chat-input__help {
+    position: absolute;
+    right: 16px;
+    bottom: -20px;
+  }
+}

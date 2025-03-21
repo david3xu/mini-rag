@@ -1,0 +1,105 @@
+/* 
+ * Source Display Component Styles
+ * Follows BEM naming convention for CSS class names
+ */
+
+ .sources {
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+.sources__toggle {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  color: #0078d4;
+  padding: 4px 0;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+  user-select: none;
+}
+
+.sources__toggle:hover {
+  text-decoration: underline;
+}
+
+.sources__toggle:focus {
+  outline: 2px solid #0078d4;
+  outline-offset: 2px;
+}
+
+.sources__toggle-text {
+  margin-right: 6px;
+}
+
+.sources__toggle-icon {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.sources__toggle-icon--expanded {
+  transform: rotate(180deg);
+}
+
+.sources__content {
+  margin-top: 8px;
+  padding: 12px;
+  background-color: #f0f7ff;
+  border-radius: 4px;
+  border-left: 3px solid #0078d4;
+}
+
+.sources__list {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sources__item {
+  margin-bottom: 8px;
+}
+
+.sources__item:last-child {
+  margin-bottom: 0;
+}
+
+.sources__header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.sources__filename {
+  color: #333;
+}
+
+.sources__page {
+  margin-left: 8px;
+  padding: 2px 6px;
+  background-color: #e1ebf5;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #0078d4;
+}
+
+.sources__excerpt {
+  color: #555;
+  font-style: italic;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  border-left: 2px solid #cce0f5;
+  padding-left: 8px;
+  margin-top: 4px;
+}
+
+/* Accessibility focus styles */
+.sources__toggle:focus-visible {
+  outline: 2px solid #0078d4;
+  outline-offset: 2px;
+}
