@@ -17,14 +17,30 @@ Mini-RAG allows users to upload documents, process them into vector embeddings, 
 
 ```
 mini-rag/
-├── frontend/             # TypeScript React frontend
-├── backend/              # Python FastAPI backend
-│   ├── app/              # Backend application code
-│   ├── models/           # LLM models
-│   └── vector_db/        # Vector database storage
-├── data/                 # Document storage
-├── docs/                 # Documentation
-└── docker-compose.yml    # Development and deployment configuration
+├── frontend/                       # TypeScript React frontend
+│   ├── src/                        # Frontend source code
+│   ├── public/                     # Static assets
+│   ├── package.json                # Frontend dependencies
+│   ├── tsconfig.json               # TypeScript configuration
+│   └── .env files                  # Environment configurations
+│
+├── backend/                        # Python FastAPI backend
+│   ├── app/                        # Backend application code
+│   │   ├── api/                    # API endpoints
+│   │   └── services/               # Service implementations
+│   ├── data/                       # Document storage
+│   │   ├── uploads/                # Uploaded documents
+│   │   └── processed/              # Processed documents
+│   ├── models/                     # LLM models (gitignored)
+│   ├── vector_db/                  # Vector database storage (gitignored)
+│   ├── main.py                     # Application entry point
+│   └── config.py                   # Configuration settings
+│
+├── docs/                           # Documentation
+├── .env.local                      # Environment variables
+├── requirements.txt                # Python dependencies
+├── docker-compose.yml              # Development configuration
+└── azure-docker-compose.yml        # Azure deployment configuration
 ```
 
 ## Features
@@ -52,6 +68,55 @@ mini-rag/
    ```bash
    docker-compose up -d
    ```
+
+## Testing
+
+The Mini-RAG project implements a comprehensive testing strategy across all components:
+
+### Backend Testing
+
+- **Unit Tests**: Located in `backend/tests/unit/`
+  - Test individual functions and classes in isolation
+  - Mock external dependencies (vector DB, models)
+  - Run with pytest: `cd backend && python -m pytest tests/unit/`
+
+- **Integration Tests**: Located in `backend/tests/integration/`
+  - Test API endpoints with the TestClient
+  - Test service interactions
+  - Run with pytest: `cd backend && python -m pytest tests/integration/`
+
+- **Vector Storage Tests**: Located in `backend/tests/vector_db/`
+  - Test ChromaDB interactions with smaller test embeddings
+  - Validate persistence and retrieval mechanisms
+  - Run with pytest: `cd backend && python -m pytest tests/vector_db/`
+
+### Frontend Testing
+
+- **Component Tests**: Located in `frontend/src/__tests__/components/`
+  - Test React components with React Testing Library
+  - Verify rendering and user interactions
+  - Run with Jest: `cd frontend && npm test`
+
+- **Hook Tests**: Located in `frontend/src/__tests__/hooks/`
+  - Test custom React hooks
+  - Run with Jest: `cd frontend && npm test`
+
+- **API Client Tests**: Located in `frontend/src/__tests__/api/`
+  - Test API client functions with mocked responses
+  - Run with Jest: `cd frontend && npm test`
+
+### End-to-End Testing
+
+- **System Tests**: Located in `e2e/`
+  - Test complete user workflows
+  - Uses Cypress to interact with the running application
+  - Run with: `cd e2e && npm test`
+
+### Test Coverage
+
+Generate test coverage reports:
+- Backend: `cd backend && python -m pytest --cov=app tests/`
+- Frontend: `cd frontend && npm test -- --coverage`
 
 ## Azure Deployment
 
