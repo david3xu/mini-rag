@@ -33,8 +33,13 @@ mini-rag/
 │   │   └── processed/              # Processed documents
 │   ├── models/                     # LLM models (gitignored)
 │   ├── vector_db/                  # Vector database storage (gitignored)
+│   ├── tests/                      # Test suite
+│   │   ├── unit/                   # Unit tests
+│   │   └── integration/            # Integration tests
 │   ├── main.py                     # Application entry point
-│   └── config.py                   # Configuration settings
+│   ├── config.py                   # Configuration settings
+│   ├── debug_tests.py              # Debug utilities
+│   └── TESTING.md                  # Testing documentation
 │
 ├── docs/                           # Documentation
 ├── .env.local                      # Environment variables
@@ -51,6 +56,7 @@ mini-rag/
 - LLM-enhanced responses using retrieved context
 - Resource-optimized implementation suitable for constrained environments
 - Docker-based deployment for both development and production
+- Comprehensive test suite for backend components
 
 ## Development
 
@@ -69,54 +75,40 @@ mini-rag/
    docker-compose up -d
    ```
 
-## Testing
+### Testing
 
-The Mini-RAG project implements a comprehensive testing strategy across all components:
+The backend includes a comprehensive test suite using pytest:
 
-### Backend Testing
+```bash
+# Run all backend tests
+cd backend && PYTHONPATH=$PYTHONPATH:$PWD python -m pytest
 
-- **Unit Tests**: Located in `backend/tests/unit/`
-  - Test individual functions and classes in isolation
-  - Mock external dependencies (vector DB, models)
-  - Run with pytest: `cd backend && python -m pytest tests/unit/`
+# Run specific test categories
+python -m pytest tests/unit/api/
 
-- **Integration Tests**: Located in `backend/tests/integration/`
-  - Test API endpoints with the TestClient
-  - Test service interactions
-  - Run with pytest: `cd backend && python -m pytest tests/integration/`
+# Run tests with coverage
+python -m pytest --cov=app
+```
 
-- **Vector Storage Tests**: Located in `backend/tests/vector_db/`
-  - Test ChromaDB interactions with smaller test embeddings
-  - Validate persistence and retrieval mechanisms
-  - Run with pytest: `cd backend && python -m pytest tests/vector_db/`
+See [backend/TESTING.md](backend/TESTING.md) for detailed testing documentation.
 
-### Frontend Testing
+## Path Management
 
-- **Component Tests**: Located in `frontend/src/__tests__/components/`
-  - Test React components with React Testing Library
-  - Verify rendering and user interactions
-  - Run with Jest: `cd frontend && npm test`
+The system uses a path resolution system to prevent duplicate directory issues:
 
-- **Hook Tests**: Located in `frontend/src/__tests__/hooks/`
-  - Test custom React hooks
-  - Run with Jest: `cd frontend && npm test`
+```python
+from config import get_path
 
-- **API Client Tests**: Located in `frontend/src/__tests__/api/`
-  - Test API client functions with mocked responses
-  - Run with Jest: `cd frontend && npm test`
+# Resolves to the correct absolute path regardless of execution context
+correct_path = get_path("vector_db/chroma_db")
+```
 
-### End-to-End Testing
+## Maintenance Utilities
 
-- **System Tests**: Located in `e2e/`
-  - Test complete user workflows
-  - Uses Cypress to interact with the running application
-  - Run with: `cd e2e && npm test`
-
-### Test Coverage
-
-Generate test coverage reports:
-- Backend: `cd backend && python -m pytest --cov=app tests/`
-- Frontend: `cd frontend && npm test -- --coverage`
+- **Cleanup Script**: `backend/clean_duplicate_dirs.py` fixes duplicate directory issues
+  ```bash
+  cd backend && python clean_duplicate_dirs.py
+  ```
 
 ## Azure Deployment
 

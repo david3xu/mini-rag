@@ -21,6 +21,11 @@ venv/
 ENV/
 env/
 
+# Test artifacts
+**/temp_test_*
+**/test_tmp*
+backend/test-reports/
+
 # IDE/Editor
 .idea/
 .vscode/
@@ -43,6 +48,10 @@ backend/vector_db/**/*
 !backend/vector_db/**/*/
 !backend/vector_db/**/.gitkeep
 
+# Prevent duplicate directory issues
+backend/backend/
+**/duplicate_*
+
 # Environment variables and local configs
 .env
 .env.*
@@ -57,6 +66,10 @@ data/uploads/**/*
 !data/uploads/**/.gitkeep
 data/processed/**/*
 !data/processed/**/.gitkeep
+backend/data/uploads/**/*
+!backend/data/uploads/**/.gitkeep
+backend/data/processed/**/*
+!backend/data/processed/**/.gitkeep
 
 # Logs
 logs/
