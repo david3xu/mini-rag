@@ -8,7 +8,7 @@ persistence.
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union, overload
 import json
 import logging
 import os
@@ -16,6 +16,7 @@ import time
 from threading import Lock
 
 from config import settings
+from app.api.models import DocumentChunk
 
 # Configure logger
 logging.basicConfig(level=logging.INFO)
@@ -32,10 +33,15 @@ class VectorStoreService:
     efficiency in resource-constrained environments.
     """
     
-    def __init__(self):
-        """Initialize the vector store service with configured settings."""
-        self.persist_directory = settings.VECTOR_DB_PATH
-        self.collection_name = settings.VECTOR_DB_COLLECTION
+    def __init__(self, persist_directory=None, collection_name=None):
+        """Initialize the vector store service with configured settings.
+        
+        Args:
+            persist_directory: Optional custom directory for vector store persistence
+            collection_name: Optional custom collection name for vector store
+        """
+        self.persist_directory = persist_directory or settings.VECTOR_DB_PATH
+        self.collection_name = collection_name or settings.VECTOR_DB_COLLECTION
         self._client = None
         self._collection = None
         
@@ -57,11 +63,13 @@ class VectorStoreService:
         if self._client is None:
             logger.info("Initializing ChromaDB client")
             try:
-                self._client = chromadb.Client(ChromaSettings(
-                    chroma_db_impl="duckdb+parquet",
-                    persist_directory=self.persist_directory,
-                    anonymized_telemetry=False
-                ))
+                # Use current Chroma API instead of deprecated configuration
+                self._client = chromadb.PersistentClient(
+                    path=self.persist_directory,
+                    settings=ChromaSettings(
+                        anonymized_telemetry=False
+                    )
+                )
                 logger.info("ChromaDB client initialized successfully")
             except Exception as e:
                 logger.error(f"Error initializing ChromaDB client: {str(e)}")
@@ -97,32 +105,54 @@ class VectorStoreService:
     
     def add_documents(
         self, 
-        documents: List[str], 
+        documents: Union[List[str], List[DocumentChunk]], 
         embeddings: List[List[float]], 
-        ids: List[str],
+        ids: Optional[List[str]] = None,
         metadatas: Optional[List[Dict[str, Any]]] = None,
         batch_size: int = 100
     ) -> None:
         """Add documents to the vector store.
         
         Args:
-            documents: List of document text content
+            documents: List of document text content or DocumentChunk objects
             embeddings: List of embedding vectors
-            ids: List of unique document identifiers
-            metadatas: Optional list of metadata dictionaries
+            ids: List of unique document identifiers (optional if using DocumentChunk)
+            metadatas: Optional list of metadata dictionaries (optional if using DocumentChunk)
             batch_size: Number of documents to add in each batch
             
         Raises:
             ValueError: If input lists have inconsistent lengths
             RuntimeError: If document addition fails
         """
+        # Handle DocumentChunk objects
+        if documents and isinstance(documents[0], DocumentChunk):
+            # Extract text, ids, and metadata from chunks
+            doc_ids = [chunk.id for chunk in documents]
+            doc_texts = [chunk.text for chunk in documents]
+            doc_metadatas = [chunk.metadata for chunk in documents]
+            
+            # Call the regular add_documents method with extracted data
+            return self.add_documents(
+                documents=doc_texts,
+                embeddings=embeddings,
+                ids=doc_ids,
+                metadatas=doc_metadatas,
+                batch_size=batch_size
+            )
+        
+        # Regular implementation for string documents
         if not documents:
             logger.warning("No documents provided for addition")
             return
         
         # Validate input consistency
-        if len(documents) != len(embeddings) or len(documents) != len(ids):
-            error_msg = f"Inconsistent lengths: documents={len(documents)}, embeddings={len(embeddings)}, ids={len(ids)}"
+        if len(documents) != len(embeddings):
+            error_msg = f"Inconsistent lengths: documents={len(documents)}, embeddings={len(embeddings)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        if ids and len(documents) != len(ids):
+            error_msg = f"Inconsistent lengths: documents={len(documents)}, ids={len(ids)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
@@ -130,6 +160,10 @@ class VectorStoreService:
             error_msg = f"Metadata length ({len(metadatas)}) doesn't match documents ({len(documents)})"
             logger.error(error_msg)
             raise ValueError(error_msg)
+        
+        # If ids not provided, generate them
+        if not ids:
+            ids = [f"doc_{i}" for i in range(len(documents))]
         
         # Convert metadatas to strings if provided
         string_metadatas = None
@@ -359,6 +393,20 @@ class VectorStoreService:
         except Exception as e:
             logger.error(f"Error retrieving collection stats: {str(e)}")
             raise RuntimeError(f"Failed to get collection statistics: {str(e)}")
+
+    # Add this method to support the tests
+    def similarity_search(self, query: str, query_embedding: List[float], k: int = 3) -> List[Dict[str, Any]]:
+        """Search for similar documents using a query embedding.
+        
+        Args:
+            query: Text of the query (not used, but included for API compatibility)
+            query_embedding: Embedding vector for the query
+            k: Number of results to return
+            
+        Returns:
+            List of document dictionaries with id, content, and metadata
+        """
+        return self.search(query_embedding, k)
 
 # Singleton instance for application-wide use
 vector_store = VectorStoreService()

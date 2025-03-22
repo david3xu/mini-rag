@@ -9,6 +9,27 @@ import os
 from pydantic import BaseModel
 
 
+# Create absolute paths relative to this file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Helper function to resolve paths
+def get_path(relative_path):
+    """Convert relative paths to absolute paths correctly.
+    
+    This prevents duplicate 'backend' directories when the code
+    is run from different locations.
+    """
+    # If path starts with ./backend/ or backend/, use just the portion after it
+    if relative_path.startswith("./backend/"):
+        path = relative_path[10:]  # Skip ./backend/
+    elif relative_path.startswith("backend/"):
+        path = relative_path[8:]   # Skip backend/
+    else:
+        path = relative_path
+        
+    return os.path.join(BASE_DIR, path)
+
+
 class Settings(BaseModel):
     """Application settings for Mini RAG backend.
     
@@ -43,17 +64,17 @@ class Settings(BaseModel):
     DEBUG: bool = False
     
     # LLM Settings
-    MODEL_PATH: str = os.environ.get("MODEL_PATH", "./backend/models/phi-2.gguf")
+    MODEL_PATH: str = os.environ.get("MODEL_PATH", get_path("models/phi-2.gguf"))
     MODEL_N_CTX: int = 2048
     MODEL_N_BATCH: int = 8
     MODEL_N_GPU_LAYERS: int = 0  # 0 for CPU-only inference
     
     # Embedding Settings
-    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "./backend/models/embeddings/all-MiniLM-L6-v2")
+    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", get_path("models/embeddings/all-MiniLM-L6-v2"))
     EMBEDDING_DIMENSION: int = 384
     
     # Vector DB Settings
-    VECTOR_DB_PATH: str = os.environ.get("VECTOR_DB_PATH", "./backend/vector_db/chroma_db")
+    VECTOR_DB_PATH: str = os.environ.get("VECTOR_DB_PATH", get_path("vector_db/chroma_db"))
     VECTOR_DB_COLLECTION: str = "documents"
     
     # Document Processing

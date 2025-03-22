@@ -19,6 +19,10 @@ from config import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Build absolute path to backend directory
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+logger.info(f"Backend directory: {BACKEND_DIR}")
+
 class EmbeddingService:
     """Service for generating embeddings from text.
     
@@ -31,10 +35,81 @@ class EmbeddingService:
         """Initialize the embedding service with the configured model."""
         # Lazy loading - model will be initialized only when needed
         self._model = None
+        
+        # Keep the original model name for reference
         self.model_name = settings.EMBEDDING_MODEL
+        
+        # Create an absolute path for the actual model location
+        if settings.EMBEDDING_MODEL.startswith("./backend/"):
+            # If path starts with ./backend, replace with absolute backend path
+            relative_path = settings.EMBEDDING_MODEL[10:]  # Remove ./backend/
+            self.model_path = os.path.join(BACKEND_DIR, relative_path)
+        else:
+            # Otherwise use as is (might be absolute already or a HF model name)
+            self.model_path = settings.EMBEDDING_MODEL
+            
+        # Check if the path exists at init time and log
+        if os.path.exists(self.model_path):
+            logger.info(f"Embedding model path verified: {self.model_path}")
+        else:
+            logger.warning(f"Embedding model path not found: {self.model_path}")
+            logger.warning("Will attempt to load from HuggingFace hub if needed.")
+        
         self.dimension = settings.EMBEDDING_DIMENSION
         self.last_used_time = 0
         logger.info(f"Embedding service initialized with model: {self.model_name}")
+    
+    def _resolve_model_path(self, model_path):
+        """Resolve the model path to ensure it exists.
+        
+        This handles different path formats (relative to current dir,
+        relative to backend dir, absolute paths) to find the actual model.
+        
+        Args:
+            model_path: The original model path from settings
+            
+        Returns:
+            The resolved path that exists, or the original path if no resolution found
+        """
+        # Check if the original path exists
+        if os.path.exists(model_path):
+            return model_path
+        
+        # Try resolving as an absolute path
+        abs_path = os.path.abspath(model_path)
+        if os.path.exists(abs_path):
+            return abs_path
+        
+        # Handle relative paths that include "backend" in the path
+        if "backend" in model_path:
+            # Try removing the ./backend/ prefix if we're already in backend dir
+            if model_path.startswith("./backend/") and os.getcwd().endswith("backend"):
+                without_prefix = model_path[10:]  # Remove ./backend/
+                if os.path.exists(without_prefix):
+                    return without_prefix
+                
+            # Try using path relative to the current file
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Navigate up from app/services to backend
+            backend_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
+            
+            # If path starts with ./backend, remove that part
+            if model_path.startswith("./backend/"):
+                path_without_backend = model_path[10:]
+            elif model_path.startswith("backend/"):
+                path_without_backend = model_path[8:]
+            else:
+                path_without_backend = model_path
+                
+            # Construct path relative to backend directory
+            rel_path = os.path.join(backend_dir, path_without_backend)
+            if os.path.exists(rel_path):
+                return rel_path
+        
+        # If all else fails, return the original path
+        # (SentenceTransformer will try to download it or fail)
+        logger.warning(f"Could not resolve model path: {model_path}")
+        return model_path
     
     @property
     def model(self):
@@ -44,33 +119,46 @@ class EmbeddingService:
             SentenceTransformer: The sentence transformer model
         """
         if self._model is None:
-            logger.info(f"Loading embedding model: {self.model_name}")
+            # Use the predetermined model path from init
+            logger.info(f"Loading embedding model: {self.model_path}")
+            
             # Initialize the model when first needed
             try:
+                # Try using the resolved path first
                 self._model = SentenceTransformer(
-                    self.model_name, 
+                    self.model_path, 
                     device="cpu"
                 )
                 logger.info("Embedding model loaded successfully")
             except Exception as e:
                 logger.error(f"Error loading embedding model: {str(e)}")
-                raise
+                # Try a fallback to the HuggingFace model if path resolution failed
+                if not os.path.exists(self.model_path):
+                    try:
+                        logger.info("Attempting to load from HuggingFace hub: all-MiniLM-L6-v2")
+                        self._model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+                        logger.info("Successfully loaded model from HuggingFace hub")
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback to HuggingFace hub failed: {str(fallback_error)}")
+                        raise
+                else:
+                    raise
         
         # Update last used time
         self.last_used_time = time.time()
         return self._model
     
-    def unload_model_if_inactive(self, threshold_seconds: int = 3600):
-        """Unload the model if it hasn't been used for a specified time period.
+    # def unload_model_if_inactive(self, threshold_seconds: int = 3600):
+    #     """Unload the model if it hasn't been used for a specified time period.
         
-        Args:
-            threshold_seconds: Number of seconds after which to unload the model
-        """
-        if self._model is not None and time.time() - self.last_used_time > threshold_seconds:
-            logger.info("Unloading embedding model due to inactivity")
-            self._model = None
-            # Force garbage collection to release memory
-            gc.collect()
+    #     Args:
+    #         threshold_seconds: Number of seconds after which to unload the model
+    #     """
+    #     if self._model is not None and time.time() - self.last_used_time > threshold_seconds:
+    #         logger.info("Unloading embedding model due to inactivity")
+    #         self._model = None
+    #         # Force garbage collection to release memory
+    #         gc.collect()
     
     def generate_embeddings(self, texts: List[str], batch_size: Optional[int] = None) -> List[List[float]]:
         """Generate embeddings for a list of text chunks.

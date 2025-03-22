@@ -82,18 +82,18 @@ class LLMService:
             self.last_used_time = time.time()
             return self._llm
     
-    def unload_model_if_inactive(self, threshold_seconds: int = 1800):
-        """Unload the model if it hasn't been used for a specified time period.
+    # def unload_model_if_inactive(self, threshold_seconds: int = 1800):
+    #     """Unload the model if it hasn't been used for a specified time period.
         
-        Args:
-            threshold_seconds: Number of seconds after which to unload the model
-        """
-        with model_lock:
-            if self._llm is not None and time.time() - self.last_used_time > threshold_seconds:
-                logger.info("Unloading LLM model due to inactivity")
-                self._llm = None
-                # Force garbage collection to release memory
-                gc.collect()
+    #     Args:
+    #         threshold_seconds: Number of seconds after which to unload the model
+    #     """
+    #     with model_lock:
+    #         if self._llm is not None and time.time() - self.last_used_time > threshold_seconds:
+    #             logger.info("Unloading LLM model due to inactivity")
+    #             self._llm = None
+    #             # Force garbage collection to release memory
+    #             gc.collect()
     
     def generate_text(
         self, 

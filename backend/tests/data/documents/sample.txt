@@ -1,0 +1,21 @@
+Mini-RAG System: Technical Overview
+
+Mini-RAG is a lightweight Retrieval-Augmented Generation (RAG) system designed for resource-efficient operation. It combines document processing, semantic search, and language model generation with optimized memory usage.
+
+Key Features:
+- Document chunking with configurable sizes and overlaps
+- Embedding generation using sentence-transformers
+- Vector storage with ChromaDB for efficient retrieval
+- Local LLM integration with phi-2.gguf
+- Memory-optimized processing pipeline
+- TypeScript/React frontend with responsive design
+- Python/FastAPI backend with resource monitoring
+
+The system implements several memory optimization techniques:
+1. Lazy loading of model resources
+2. Batch processing with adaptive sizes
+3. Explicit memory cleanup after operations
+4. Resource monitoring and throttling
+5. Disk-based persistence for vector data
+
+Mini-RAG provides a migration pathway to Azure cloud services while maintaining local execution capabilities for development and testing. 

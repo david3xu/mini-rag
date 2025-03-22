@@ -447,18 +447,18 @@ class DocumentProcessor:
         """
         if chunk_size is None:
             chunk_size = self.chunk_size
-        
+            
         if overlap is None:
             overlap = self.chunk_overlap
-        
+            
         # Ensure sensible values
         if overlap >= chunk_size:
             overlap = chunk_size // 2
-        
+            
         # If text is already small enough, return as is
         if len(text) <= chunk_size:
             return [text]
-        
+            
         chunks = []
         start = 0
         
@@ -485,15 +485,17 @@ class DocumentProcessor:
                         end = space_pos + 1
             
             # Extract chunk
-            chunks.append(text[start:end])
+            chunk = text[start:end]
+            chunks.append(chunk)
             
-            # Move start position for next chunk, considering overlap
-            start = end - overlap
+            # Move start position for next chunk, ensuring proper overlap
+            # Calculate the new start position to maintain the specified overlap
+            start = max(start + 1, end - overlap)
             
             # Avoid getting stuck at the same position
             if start >= len(text) - 10:  # Near the end with little content left
                 break
-            if start <= chunks[-1][0]:  # No progress was made
+            if len(chunks) > 1 and start >= end:  # No progress was made
                 start = end  # Skip overlap in problematic cases
         
         return chunks
