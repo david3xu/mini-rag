@@ -98,7 +98,7 @@ const ChatInterface: React.FC = () => {
    * Temporary function to simulate API latency
    * Will be replaced with actual API integration
    */
-  const simulateApiCall = async (query: string): Promise<void> => {
+  const simulateApiCall = async (_query: string): Promise<void> => {
     // Simulate network latency
     return new Promise(resolve => setTimeout(resolve, 1000));
   };

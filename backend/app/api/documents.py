@@ -187,7 +187,7 @@ async def upload_documents(
             
             # Save file temporarily
             file_id = str(uuid.uuid4())
-            temp_dir = os.path.join("data", "uploads")
+            temp_dir = os.path.join("backend", "data", "uploads")
             os.makedirs(temp_dir, exist_ok=True)
             
             temp_file_path = os.path.join(temp_dir, f"{file_id}_{filename}")

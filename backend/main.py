@@ -35,8 +35,8 @@ async def lifespan(app: FastAPI):
         app: FastAPI application instance
     """
     # Startup: Create necessary directories
-    os.makedirs(os.path.join("data", "uploads"), exist_ok=True)
-    os.makedirs(os.path.join("data", "processed"), exist_ok=True)
+    os.makedirs(os.path.join("backend", "data", "uploads"), exist_ok=True)
+    os.makedirs(os.path.join("backend", "data", "processed"), exist_ok=True)
     os.makedirs(settings.VECTOR_DB_PATH, exist_ok=True)
     
     logger.info(f"Starting {settings.APP_NAME} backend service")
@@ -102,3 +102,9 @@ async def add_process_time_header(request: Request, call_next):
             status_code=500,
             content={"detail": "Internal server error. Please try again later."}
         )
+
+# Include main API router
+app.include_router(router, prefix=settings.API_PREFIX)
+
+# Include OpenAI-compatible API router (no prefix, matches OpenAI API paths)
+app.include_router(openai_router)

@@ -188,22 +188,36 @@ async def openai_compatible_chat(
                 # Stream the response in OpenAI format
                 for chunk in llm_service.generate_text(prompt, temperature=temperature, 
                                                       max_tokens=max_tokens, stream=True):
-                    yield f"data: {json.dumps({'id': f'chatcmpl-{int(time.time())}',
-                                             'object': 'chat.completion.chunk',
-                                             'created': int(time.time()),
-                                             'model': 'phi-2-local',
-                                             'choices': [{'index': 0,
-                                                         'delta': {'content': chunk},
-                                                         'finish_reason': None}]})}\n\n"
+                    response_data = {
+                        'id': f'chatcmpl-{int(time.time())}',
+                        'object': 'chat.completion.chunk',
+                        'created': int(time.time()),
+                        'model': 'phi-2-local',
+                        'choices': [
+                            {
+                                'index': 0,
+                                'delta': {'content': chunk},
+                                'finish_reason': None
+                            }
+                        ]
+                    }
+                    yield f"data: {json.dumps(response_data)}\n\n"
                             
                 # Send the final chunk
-                yield f"data: {json.dumps({'id': f'chatcmpl-{int(time.time())}',
-                                         'object': 'chat.completion.chunk',
-                                         'created': int(time.time()),
-                                         'model': 'phi-2-local',
-                                         'choices': [{'index': 0,
-                                                     'delta': {},
-                                                     'finish_reason': 'stop'}]})}\n\n"
+                final_data = {
+                    'id': f'chatcmpl-{int(time.time())}',
+                    'object': 'chat.completion.chunk',
+                    'created': int(time.time()),
+                    'model': 'phi-2-local',
+                    'choices': [
+                        {
+                            'index': 0,
+                            'delta': {},
+                            'finish_reason': 'stop'
+                        }
+                    ]
+                }
+                yield f"data: {json.dumps(final_data)}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': {'message': str(e), 'type': 'server_error'}})}\n\n"

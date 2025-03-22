@@ -2,9 +2,18 @@ node_modules/
 *.log
 dist/
 
-models/**/*
-!models/**/*/
-!models/**/.gitkeep
+# Ignore all files in backend/models directory
+backend/models/**/*
+# But keep the directories
+!backend/models/**/*/
+# And keep the .gitkeep files to preserve directory structure
+!backend/models/**/.gitkeep
+
+backend/vector_db/**/*
+!backend/vector_db/**/*/
+!backend/vector_db/**/.gitkeep          
 
 .env.local 
 .venv/
+
+__pycache__/

@@ -6,10 +6,10 @@ including model paths, API settings, and resource optimization parameters.
 """
 
 import os
-from pydantic import BaseSettings
+from pydantic import BaseModel
 
 
-class Settings(BaseSettings):
+class Settings(BaseModel):
     """Application settings for Mini RAG backend.
     
     This class defines configuration parameters for various components of the
@@ -43,17 +43,17 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     
     # LLM Settings
-    MODEL_PATH: str = os.environ.get("MODEL_PATH", "./models/phi-2.gguf")
+    MODEL_PATH: str = os.environ.get("MODEL_PATH", "./backend/models/phi-2.gguf")
     MODEL_N_CTX: int = 2048
     MODEL_N_BATCH: int = 8
     MODEL_N_GPU_LAYERS: int = 0  # 0 for CPU-only inference
     
     # Embedding Settings
-    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "./backend/models/embeddings/all-MiniLM-L6-v2")
     EMBEDDING_DIMENSION: int = 384
     
     # Vector DB Settings
-    VECTOR_DB_PATH: str = os.environ.get("VECTOR_DB_PATH", "./vector_db/chroma_db")
+    VECTOR_DB_PATH: str = os.environ.get("VECTOR_DB_PATH", "./backend/vector_db/chroma_db")
     VECTOR_DB_COLLECTION: str = "documents"
     
     # Document Processing

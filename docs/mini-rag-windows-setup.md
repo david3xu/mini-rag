@@ -43,13 +43,17 @@ pip install llama-cpp-python --prefer-binary
 mkdir -p models/embeddings
 
 # Download recommended model (Q4_0 - balanced size/quality)
-curl -L "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_0.gguf" -o "models/phi-2.gguf"
+curl -L "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_K_M.gguf" -o "backend/models/phi-2.gguf"
 
 # Alternative using wget
 # wget "https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_0.gguf" -O "models/phi-2.gguf"
 
 # Download lightweight embedding model
-python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('sentence-transformers/paraphrase-MiniLM-L3-v2'); model.save('models/embeddings/paraphrase-MiniLM-L3-v2')"
+python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); model.save('backend/models/embeddings/all-MiniLM-L6-v2')"
+
+
+python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='sentence-transformers/all-MiniLM-L6-v2', local_dir='./backend/models/embeddings/all-MiniLM-L6-v2')"
+
 
 # Download optimized LLM (Option 1: PowerShell)
 # Make sure models directory exists
