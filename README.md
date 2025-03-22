@@ -19,9 +19,10 @@ Mini-RAG allows users to upload documents, process them into vector embeddings, 
 mini-rag/
 ├── frontend/             # TypeScript React frontend
 ├── backend/              # Python FastAPI backend
+│   ├── app/              # Backend application code
+│   ├── models/           # LLM models
+│   └── vector_db/        # Vector database storage
 ├── data/                 # Document storage
-├── models/               # LLM models
-├── vector_db/            # Vector database storage
 ├── docs/                 # Documentation
 └── docker-compose.yml    # Development and deployment configuration
 ```
