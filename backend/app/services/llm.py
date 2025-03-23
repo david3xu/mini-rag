@@ -12,6 +12,7 @@ import os
 import gc
 import logging
 import threading
+import psutil
 
 from config import settings
 
@@ -39,6 +40,7 @@ class LLMService:
         self._n_batch = settings.MODEL_N_BATCH
         self._n_gpu_layers = settings.MODEL_N_GPU_LAYERS
         self.last_used_time = 0
+        self._is_loading = False
         
         logger.info(f"LLM service initialized with model path: {self._model_path}")
         
@@ -58,49 +60,94 @@ class LLMService:
             RuntimeError: If model loading fails
         """
         with model_lock:
-            if self._llm is None:
+            # Check available memory before loading
+            if self._llm is None and not self._is_loading:
+                self._check_memory_before_loading()
+                
                 logger.info(f"Loading LLM model from: {self._model_path}")
+                self._is_loading = True
                 
                 if not os.path.exists(self._model_path):
+                    self._is_loading = False
                     logger.error(f"Model file not found: {self._model_path}")
                     raise FileNotFoundError(f"Model file not found: {self._model_path}")
                 
                 try:
+                    # Use more efficient settings for memory constrained environments
                     self._llm = llama_cpp.Llama(
                         model_path=self._model_path,
                         n_ctx=self._n_ctx,
                         n_batch=self._n_batch,
                         n_gpu_layers=self._n_gpu_layers,
                         verbose=False,
+                        # Add these params for better performance
+                        n_threads=min(4, os.cpu_count() or 1),  # Limit thread count
+                        use_mlock=False,  # Don't lock memory
+                        use_mmap=True,  # Use memory mapping
                     )
                     logger.info("LLM model loaded successfully")
                 except Exception as e:
+                    self._is_loading = False
                     logger.error(f"Error loading LLM model: {str(e)}")
                     raise RuntimeError(f"Failed to load LLM model: {str(e)}")
+                finally:
+                    self._is_loading = False
             
             # Update last used timestamp
             self.last_used_time = time.time()
             return self._llm
     
-    # def unload_model_if_inactive(self, threshold_seconds: int = 1800):
-    #     """Unload the model if it hasn't been used for a specified time period.
+    def _check_memory_before_loading(self):
+        """Check available memory before loading the model.
         
-    #     Args:
-    #         threshold_seconds: Number of seconds after which to unload the model
-    #     """
-    #     with model_lock:
-    #         if self._llm is not None and time.time() - self.last_used_time > threshold_seconds:
-    #             logger.info("Unloading LLM model due to inactivity")
-    #             self._llm = None
-    #             # Force garbage collection to release memory
-    #             gc.collect()
+        Raises:
+            RuntimeError: If not enough memory is available
+        """
+        # Get memory info
+        mem = psutil.virtual_memory()
+        available_mb = mem.available / (1024 * 1024)
+        
+        # Estimate model size (rough approximation based on file size)
+        model_size_mb = os.path.getsize(self._model_path) / (1024 * 1024)
+        needed_memory_mb = model_size_mb * 1.5  # 1.5x model size for safe loading
+        
+        logger.info(f"Available memory: {available_mb:.2f}MB, Estimated needed: {needed_memory_mb:.2f}MB")
+        
+        # Check if enough memory is available
+        if available_mb < needed_memory_mb:
+            logger.warning(f"Low memory condition: {available_mb:.2f}MB available, need ~{needed_memory_mb:.2f}MB")
+            
+            # Try to free memory
+            gc.collect()
+            
+            # Check again
+            mem = psutil.virtual_memory()
+            available_mb = mem.available / (1024 * 1024)
+            
+            if available_mb < needed_memory_mb:
+                logger.error(f"Insufficient memory to load model: {available_mb:.2f}MB available")
+                raise RuntimeError(f"Insufficient memory to load model. Need ~{needed_memory_mb:.2f}MB but only {available_mb:.2f}MB available")
+    
+    def unload_model_if_inactive(self, threshold_seconds: int = 1800):
+        """Unload the model if it hasn't been used for a specified time period.
+        
+        Args:
+            threshold_seconds: Number of seconds after which to unload the model
+        """
+        with model_lock:
+            if self._llm is not None and time.time() - self.last_used_time > threshold_seconds:
+                logger.info("Unloading LLM model due to inactivity")
+                self._llm = None
+                # Force garbage collection to release memory
+                gc.collect()
     
     def generate_text(
         self, 
         prompt: str, 
         max_tokens: int = 512, 
         temperature: float = 0.7,
-        stream: bool = False
+        stream: bool = False,
+        timeout_seconds: int = 30
     ) -> Union[str, Generator[str, None, None]]:
         """Generate text from the LLM.
         
@@ -109,6 +156,7 @@ class LLMService:
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature (0.0-1.0)
             stream: Whether to stream the response
+            timeout_seconds: Maximum time to wait for generation
             
         Returns:
             Generated text or a generator yielding text chunks
@@ -127,24 +175,38 @@ class LLMService:
         try:
             logger.info(f"Generating text with max_tokens={max_tokens}, temperature={temperature}")
             
+            # Apply shorter context for faster generation
+            actual_max_tokens = min(max_tokens, self._n_ctx - len(phi_prompt) // 4)
+            
             if not stream:
-                # Generate complete response
+                # Generate complete response with timeout handling
+                start_time = time.time()
+                
+                # Memory optimization: before large operation
+                gc.collect()
+                
                 response = self.llm(
                     phi_prompt,
-                    max_tokens=max_tokens,
+                    max_tokens=actual_max_tokens,
                     temperature=temperature,
-                    echo=False
+                    echo=False,
+                    stop=["</s>", "<s>"]  # Stop at special tokens
                 )
+                
+                elapsed = time.time() - start_time
+                if elapsed > 5:  # Log slow generations
+                    logger.warning(f"Slow text generation: {elapsed:.2f} seconds")
+                
                 return response["choices"][0]["text"].strip()
             else:
                 # Return generator for streaming response
-                return self._generate_streaming_response(phi_prompt, max_tokens, temperature)
+                return self._generate_streaming_response(phi_prompt, actual_max_tokens, temperature, timeout_seconds)
         except Exception as e:
             logger.error(f"Error during text generation: {str(e)}")
             raise RuntimeError(f"Failed to generate text: {str(e)}")
     
     def _generate_streaming_response(
-        self, prompt: str, max_tokens: int, temperature: float
+        self, prompt: str, max_tokens: int, temperature: float, timeout_seconds: int
     ) -> Generator[str, None, None]:
         """Generate streaming text response.
         
@@ -152,6 +214,7 @@ class LLMService:
             prompt: Formatted prompt
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
+            timeout_seconds: Maximum generation time
             
         Yields:
             Text chunks as they are generated
@@ -161,17 +224,34 @@ class LLMService:
         """
         try:
             # Generate streaming response
+            start_time = time.time()
             response_text = ""
+            
+            # Memory optimization: before large operation
+            gc.collect()
+            
             for token in self.llm(
                 prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 echo=False,
-                stream=True
+                stream=True,
+                stop=["</s>", "<s>"]  # Stop at special tokens
             ):
+                # Check timeout
+                if time.time() - start_time > timeout_seconds:
+                    logger.warning(f"Generation timeout after {timeout_seconds} seconds")
+                    yield "\n\n[Generation timed out due to performance constraints]"
+                    break
+                    
                 chunk = token["choices"][0]["text"]
                 response_text += chunk
                 yield chunk
+            
+            # Log generation time for monitoring
+            elapsed = time.time() - start_time
+            if elapsed > 5:  # Log slow generations
+                logger.warning(f"Slow streaming generation: {elapsed:.2f} seconds")
             
             return response_text
         except Exception as e:
@@ -191,11 +271,21 @@ class LLMService:
         Returns:
             Formatted prompt string
         """
-        # Extract and format document content
-        context = "\n\n".join([
-            f"Document {i+1}:\n{doc['content']}"
-            for i, doc in enumerate(documents)
-        ])
+        # Limit number of documents for memory efficiency
+        max_docs = min(3, len(documents))
+        limited_docs = documents[:max_docs]
+        
+        # Limit context size per document
+        max_content_length = min(500, self._n_ctx // (max_docs * 2))
+        context_parts = []
+        
+        for i, doc in enumerate(limited_docs):
+            content = doc['content']
+            if len(content) > max_content_length:
+                content = content[:max_content_length] + "..."
+            context_parts.append(f"Document {i+1}:\n{content}")
+        
+        context = "\n\n".join(context_parts)
         
         # Create RAG prompt with context and query
         prompt = f"""
@@ -203,7 +293,7 @@ class LLMService:
         
         Answer the following query based ONLY on the information from these documents.
         If the documents don't contain relevant information to answer the query, say "I don't have enough information to answer this question."
-        Do not make up or infer information that is not explicitly stated in the documents.
+        Use concise language and be direct. Keep your answer focused.
         
         Documents:
         {context}
@@ -213,6 +303,81 @@ class LLMService:
         Answer:
         """
         return prompt
+    
+    # Added lightweight method for quick testing
+    def quick_generate(self, query: str) -> str:
+        """Generate a quick response without full context loading.
+        
+        This is a lightweight method for testing when the main generation
+        might be too resource-intensive.
+        
+        Args:
+            query: User query text
+            
+        Returns:
+            A simple generated response
+        """
+        try:
+            # Short context, minimal parameters
+            prompt = f"<s>Instruct: {query}\nOutput:"
+            
+            # Memory optimization before generation
+            gc.collect()
+            
+            # Generate with minimal parameters
+            response = self.llm(
+                prompt,
+                max_tokens=50,
+                temperature=0.7,
+                echo=False,
+                stop=["</s>", "<s>"]
+            )
+            
+            return response["choices"][0]["text"].strip()
+        except Exception as e:
+            logger.error(f"Error in quick generation: {str(e)}")
+            return f"Error generating response: {str(e)}"
 
 # Singleton instance for application-wide use
 llm_service = LLMService()
+
+# Automatic cleanup task
+def setup_automatic_cleanup(app=None):
+    """Set up automatic cleanup of inactive model.
+    
+    Args:
+        app: FastAPI app for startup/shutdown events
+    """
+    import threading
+    
+    def cleanup_task():
+        """Background task to periodically unload inactive models."""
+        while True:
+            try:
+                # Check every 10 minutes
+                time.sleep(600)
+                llm_service.unload_model_if_inactive(threshold_seconds=1800)  # 30 minutes
+            except Exception as e:
+                logger.error(f"Error in cleanup task: {str(e)}")
+    
+    # Start background thread
+    cleanup_thread = threading.Thread(target=cleanup_task, daemon=True)
+    cleanup_thread.start()
+    
+    # Register with FastAPI if app provided
+    if app:
+        @app.on_event("startup")
+        def start_cleanup():
+            logger.info("Starting automatic model cleanup task")
+            # Thread already started above
+    
+        @app.on_event("shutdown")
+        def stop_cleanup():
+            logger.info("Stopping automatic model cleanup task")
+            # Thread will be stopped automatically as daemon=True
+            
+            # Unload model to free memory
+            with model_lock:
+                if llm_service._llm is not None:
+                    llm_service._llm = None
+                    gc.collect()

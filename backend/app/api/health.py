@@ -175,3 +175,12 @@ async def get_liveness():
         Simple status response
     """
     return {"status": "alive"}
+
+@router.get("/test")
+async def test_endpoint():
+    """
+    Simple test endpoint that doesn't use LLM or vector store.
+    Used to test API responsiveness.
+    """
+    print("[DEBUG] Test endpoint called")
+    return {"status": "ok", "message": "Test endpoint working"}

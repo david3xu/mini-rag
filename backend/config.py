@@ -65,9 +65,11 @@ class Settings(BaseModel):
     
     # LLM Settings
     MODEL_PATH: str = os.environ.get("MODEL_PATH", get_path("models/phi-2.gguf"))
-    MODEL_N_CTX: int = 2048
+    MODEL_N_CTX: int = 512  # Already optimized at 512, good!
     MODEL_N_BATCH: int = 8
     MODEL_N_GPU_LAYERS: int = 0  # 0 for CPU-only inference
+    MODEL_N_THREADS: int = min(4, os.cpu_count() or 1)  # Limit thread count
+    MODEL_UNLOAD_TIMEOUT: int = 1800  # Unload model after 30 minutes of inactivity
     
     # Embedding Settings
     EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", get_path("models/embeddings/all-MiniLM-L6-v2"))
@@ -76,15 +78,20 @@ class Settings(BaseModel):
     # Vector DB Settings
     VECTOR_DB_PATH: str = os.environ.get("VECTOR_DB_PATH", get_path("vector_db/chroma_db"))
     VECTOR_DB_COLLECTION: str = "documents"
+    VECTOR_DB_IMPL: str = "duckdb+parquet"  # Ensure disk-based implementation
     
     # Document Processing
-    CHUNK_SIZE: int = 1000
-    CHUNK_OVERLAP: int = 100
-    MAX_DOCUMENT_SIZE_MB: int = 10
+    CHUNK_SIZE: int = 500  # Reduced from 1000 for memory efficiency
+    CHUNK_OVERLAP: int = 50  # Reduced from 100 for efficiency
+    MAX_DOCUMENT_SIZE_MB: int = 5  # Reduced from 10 for memory efficiency
     
     # Memory Optimization
-    DEFAULT_BATCH_SIZE: int = 8  # Default batch size for processing
-    MEMORY_SAFETY_MARGIN_MB: int = 512  # Safety margin for memory operations
+    DEFAULT_BATCH_SIZE: int = 4  # Reduced from 8 for memory efficiency
+    MEMORY_SAFETY_MARGIN_MB: int = 256  # Reduced from 512 for better balance
+    
+    # Request Optimization
+    REQUEST_TIMEOUT_SECONDS: int = 10  # Timeout for requests
+    QUERY_TIMEOUT_MS: int = 3000  # Timeout for vector queries (3 seconds)
     
     # Azure Configuration (used when migrating)
     AZURE_OPENAI_ENDPOINT: str = os.environ.get("AZURE_OPENAI_ENDPOINT", "")

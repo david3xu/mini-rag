@@ -32,12 +32,12 @@ except ImportError as e:
     
     # Try with relative imports
     from fastapi.testclient import TestClient
-    from backend.app.main import app
-    from backend.app.api.models import DocumentChunk
-    from backend.app.api.health import ResourceMetrics  # Fixed import for ResourceMetrics
-    from backend.app.services.vectorstore import VectorStoreService
-    from backend.app.services.embeddings import embeddings_service
-    from backend.config import settings
+    from main import app
+    from app.api.models import DocumentChunk
+    from app.api.health import ResourceMetrics  # Fixed import for ResourceMetrics
+    from app.services.vectorstore import VectorStoreService
+    from app.services.embeddings import embeddings_service
+    from config import settings
 
 # Create test client
 client = TestClient(app)

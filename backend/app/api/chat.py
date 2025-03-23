@@ -62,19 +62,36 @@ async def process_query(request: QueryRequest):
         HTTPException: If processing fails
     """
     try:
+        print(f"[DEBUG] Received query: {request.query}")
+        
         # Generate query embedding
+        print("[DEBUG] Generating query embedding...")
+        start_time = time.time()
         query_embedding = embeddings_service.generate_embedding(request.query)
+        print(f"[DEBUG] Embedding generated in {time.time() - start_time:.2f} seconds")
         
         # Retrieve relevant documents
+        print("[DEBUG] Searching vector store for relevant documents...")
+        start_time = time.time()
         documents = vector_store.search(query_embedding)
+        print(f"[DEBUG] Retrieved {len(documents)} documents in {time.time() - start_time:.2f} seconds")
         
         # Generate prompt with context
+        print("[DEBUG] Formatting RAG prompt...")
+        start_time = time.time()
         prompt = llm_service.format_rag_prompt(request.query, documents)
+        print(f"[DEBUG] Prompt formatted in {time.time() - start_time:.2f} seconds")
+        print(f"[DEBUG] Prompt length: {len(prompt)} characters")
         
         # Generate answer
+        print("[DEBUG] Generating LLM response...")
+        start_time = time.time()
         answer = llm_service.generate_text(prompt)
+        print(f"[DEBUG] Response generated in {time.time() - start_time:.2f} seconds")
+        print(f"[DEBUG] Response length: {len(answer)} characters")
         
         # Format response
+        print("[DEBUG] Formatting final response...")
         sources = []
         for doc in documents:
             content = doc["content"]
@@ -88,11 +105,13 @@ async def process_query(request: QueryRequest):
                 metadata=SourceMetadata(**doc["metadata"])
             ))
         
+        print("[DEBUG] Request processing complete, returning response")
         return QueryResponse(
             answer=answer,
             sources=sources
         )
     except Exception as e:
+        print(f"[ERROR] Exception during query processing: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stream")
@@ -146,15 +165,22 @@ async def openai_compatible_chat(
     Returns:
         OpenAI-formatted response
     """
+    print(f"[DEBUG] Received OpenAI-compatible request")
+    
     messages = request.get("messages", [])
     temperature = request.get("temperature", 0.7)
     max_tokens = request.get("max_tokens", 512)
     stream = request.get("stream", False)
     
+    print(f"[DEBUG] Request params: temperature={temperature}, max_tokens={max_tokens}, stream={stream}")
+    print(f"[DEBUG] Messages: {messages}")
+    
     # Extract the query from messages (typically the last user message)
     query = next((msg["content"] for msg in reversed(messages) if msg["role"] == "user"), "")
+    print(f"[DEBUG] Extracted query: {query}")
     
     if not query:
+        print("[DEBUG] Empty query, returning default response")
         return {
             "id": f"chatcmpl-{int(time.time())}",
             "object": "chat.completion",
@@ -174,20 +200,34 @@ async def openai_compatible_chat(
     
     # Process in streaming mode if requested
     if stream:
+        print("[DEBUG] Processing in streaming mode")
         async def generate_stream():
             try:
                 # Generate query embedding
+                print("[DEBUG] Generating query embedding for streaming...")
+                start_time = time.time()
                 query_embedding = embeddings_service.generate_embedding(query)
+                print(f"[DEBUG] Embedding generated in {time.time() - start_time:.2f} seconds")
                 
                 # Retrieve relevant documents
+                print("[DEBUG] Searching vector store for streaming...")
+                start_time = time.time()
                 documents = vector_store.search(query_embedding)
+                print(f"[DEBUG] Retrieved {len(documents)} documents in {time.time() - start_time:.2f} seconds")
                 
                 # Generate prompt with context
+                print("[DEBUG] Formatting RAG prompt for streaming...")
+                start_time = time.time()
                 prompt = llm_service.format_rag_prompt(query, documents)
+                print(f"[DEBUG] Prompt formatted in {time.time() - start_time:.2f} seconds")
                 
                 # Stream the response in OpenAI format
+                print("[DEBUG] Starting streaming generation...")
+                stream_start_time = time.time()
+                chunk_count = 0
                 for chunk in llm_service.generate_text(prompt, temperature=temperature, 
                                                       max_tokens=max_tokens, stream=True):
+                    chunk_count += 1
                     response_data = {
                         'id': f'chatcmpl-{int(time.time())}',
                         'object': 'chat.completion.chunk',
@@ -202,6 +242,8 @@ async def openai_compatible_chat(
                         ]
                     }
                     yield f"data: {json.dumps(response_data)}\n\n"
+                
+                print(f"[DEBUG] Streaming completed in {time.time() - stream_start_time:.2f} seconds, {chunk_count} chunks")
                             
                 # Send the final chunk
                 final_data = {
@@ -220,26 +262,43 @@ async def openai_compatible_chat(
                 yield f"data: {json.dumps(final_data)}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception as e:
+                print(f"[ERROR] Exception during streaming: {str(e)}")
                 yield f"data: {json.dumps({'error': {'message': str(e), 'type': 'server_error'}})}\n\n"
                 
         return StreamingResponse(generate_stream(), media_type="text/event-stream")
     
+    print("[DEBUG] Processing in non-streaming mode")
     # Generate query embedding
+    print("[DEBUG] Generating query embedding...")
+    start_time = time.time()
     query_embedding = embeddings_service.generate_embedding(query)
+    print(f"[DEBUG] Embedding generated in {time.time() - start_time:.2f} seconds")
     
     # Retrieve relevant documents
+    print("[DEBUG] Searching vector store...")
+    start_time = time.time()
     documents = vector_store.search(query_embedding)
+    print(f"[DEBUG] Retrieved {len(documents)} documents in {time.time() - start_time:.2f} seconds")
     
     # Generate prompt with context
+    print("[DEBUG] Formatting RAG prompt...")
+    start_time = time.time()
     prompt = llm_service.format_rag_prompt(query, documents)
+    print(f"[DEBUG] Prompt formatted in {time.time() - start_time:.2f} seconds")
+    print(f"[DEBUG] Prompt length: {len(prompt)} characters")
     
     # Generate answer
+    print("[DEBUG] Generating LLM response...")
+    start_time = time.time()
     answer = llm_service.generate_text(
         prompt, 
         temperature=temperature,
         max_tokens=max_tokens
     )
+    print(f"[DEBUG] Response generated in {time.time() - start_time:.2f} seconds")
+    print(f"[DEBUG] Response length: {len(answer)} characters")
     
+    print("[DEBUG] Formatting OpenAI-compatible response")
     # Format response like OpenAI API
     return {
         "id": f"chatcmpl-{int(time.time())}",
