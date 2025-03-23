@@ -7,8 +7,7 @@ with disk-based persistence.
 """
 
 import chromadb
-from chromadb.config import Settings as ChromaSettings
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple
 import json
 import logging
 import os
@@ -16,12 +15,13 @@ import time
 import psutil
 from threading import Lock
 import gc
+import traceback
 
 from config import settings, get_path
 from app.api.models import DocumentChunk
 
 # Configure logger
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Thread lock for safe collection operations
@@ -78,6 +78,7 @@ class VectorStoreService:
                 logger.info("ChromaDB client initialized successfully")
             except Exception as e:
                 logger.error(f"Error initializing ChromaDB client: {str(e)}")
+                logger.error(f"Stack trace: {traceback.format_exc()}")
                 raise RuntimeError(f"Failed to initialize vector database: {str(e)}")
         
         # Update last access time
@@ -133,11 +134,54 @@ class VectorStoreService:
                     logger.info(f"Collection '{self.collection_name}' ready")
                 except Exception as e:
                     logger.error(f"Error accessing collection: {str(e)}")
+                    logger.error(f"Stack trace: {traceback.format_exc()}")
                     raise RuntimeError(f"Failed to access vector collection: {str(e)}")
             
             # Update last access time
             self._last_access_time = time.time()
             return self._collection
+    
+    def _safe_collection_operation(self, operation_name: str, operation_func, *args, **kwargs):
+        """Execute collection operation with proper error handling and reporting.
+        
+        Args:
+            operation_name: Name of the operation for logging
+            operation_func: Function to execute
+            *args: Arguments to pass to operation_func
+            **kwargs: Keyword arguments to pass to operation_func
+            
+        Returns:
+            Result of operation_func
+            
+        Raises:
+            RuntimeError: If operation fails
+        """
+        start_time = time.time()
+        
+        try:
+            logger.debug(f"Starting {operation_name} operation")
+            result = operation_func(*args, **kwargs)
+            
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Completed {operation_name} in {elapsed_ms:.2f}ms")
+            
+            return result
+        except Exception as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(f"Failed {operation_name} after {elapsed_ms:.2f}ms: {str(e)}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            
+            # Provide detailed error context
+            error_context = {
+                "operation": operation_name,
+                "args_count": len(args),
+                "kwargs": list(kwargs.keys()),
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            }
+            logger.error(f"Error context: {error_context}")
+            
+            raise RuntimeError(f"Vector store operation '{operation_name}' failed: {str(e)}")
     
     def add_documents(
         self, 
@@ -145,7 +189,8 @@ class VectorStoreService:
         embeddings: List[List[float]], 
         ids: Optional[List[str]] = None,
         metadatas: Optional[List[Dict[str, Any]]] = None,
-        batch_size: int = None
+        batch_size: int = None,
+        use_individual_processing: bool = False
     ) -> None:
         """Add documents to the vector store.
         
@@ -155,6 +200,7 @@ class VectorStoreService:
             ids: List of unique document identifiers (optional if using DocumentChunk)
             metadatas: Optional list of metadata dictionaries (optional if using DocumentChunk)
             batch_size: Number of documents to add in each batch
+            use_individual_processing: Process documents one by one for better error isolation
             
         Raises:
             ValueError: If input lists have inconsistent lengths
@@ -180,14 +226,38 @@ class VectorStoreService:
             doc_texts = [chunk.text for chunk in documents]
             doc_metadatas = [chunk.metadata for chunk in documents]
             
-            # Call the regular add_documents method with extracted data
-            return self.add_documents(
-                documents=doc_texts,
-                embeddings=embeddings,
-                ids=doc_ids,
-                metadatas=doc_metadatas,
-                batch_size=batch_size
-            )
+            # Process DocumentChunk objects
+            if use_individual_processing:
+                # Process each document individually for better error isolation
+                logger.info(f"Processing {len(documents)} DocumentChunk objects individually")
+                
+                success_count = 0
+                for i, (doc, embedding) in enumerate(zip(documents, embeddings)):
+                    try:
+                        # Add single document
+                        self.add_single_document(
+                            document=doc.text,
+                            embedding=embedding,
+                            doc_id=doc.id,
+                            metadata=doc.metadata
+                        )
+                        success_count += 1
+                        logger.info(f"✓ DocumentChunk {i+1}/{len(documents)} added successfully: {doc.id}")
+                    except Exception as e:
+                        logger.error(f"✗ Failed to add DocumentChunk {i+1}/{len(documents)} - {doc.id}: {str(e)}")
+                
+                logger.info(f"Added {success_count}/{len(documents)} DocumentChunk objects successfully")
+                return
+            else:
+                # Process all document chunks as a batch
+                logger.info(f"Processing {len(documents)} DocumentChunk objects in batches")
+                return self.add_documents(
+                    documents=doc_texts,
+                    embeddings=embeddings,
+                    ids=doc_ids,
+                    metadatas=doc_metadatas,
+                    batch_size=batch_size
+                )
         
         # Regular implementation for string documents
         if not documents:
@@ -214,19 +284,29 @@ class VectorStoreService:
         if not ids:
             ids = [f"doc_{i}" for i in range(len(documents))]
         
-        # Convert metadatas to strings if provided
-        string_metadatas = None
-        if metadatas:
-            string_metadatas = []
-            for m in metadatas:
+        # Process using individual document addition for better error isolation
+        if use_individual_processing:
+            logger.info(f"Processing {len(documents)} documents individually")
+            
+            success_count = 0
+            for i, (doc, embedding, doc_id) in enumerate(zip(documents, embeddings, ids)):
+                metadata = metadatas[i] if metadatas else None
                 try:
-                    # Keep a copy in the cache for faster retrieval
-                    self._metadata_cache[m.get('source', '')] = m
-                    string_metadatas.append(json.dumps(m))
+                    self.add_single_document(
+                        document=doc,
+                        embedding=embedding,
+                        doc_id=doc_id,
+                        metadata=metadata
+                    )
+                    success_count += 1
+                    logger.info(f"✓ Document {i+1}/{len(documents)} added successfully: {doc_id}")
                 except Exception as e:
-                    logger.warning(f"Error serializing metadata: {str(e)}. Using empty metadata.")
-                    string_metadatas.append("{}")
+                    logger.error(f"✗ Failed to add document {i+1}/{len(documents)} - {doc_id}: {str(e)}")
+            
+            logger.info(f"Added {success_count}/{len(documents)} documents successfully")
+            return
         
+        # Process in batches
         logger.info(f"Adding {len(documents)} documents to vector store in batches of {batch_size}")
         
         try:
@@ -243,19 +323,26 @@ class VectorStoreService:
                     batch_embeddings = embeddings[i:end_idx]
                     batch_ids = ids[i:end_idx]
                     
-                    batch_metadatas = None
-                    if string_metadatas:
-                        batch_metadatas = string_metadatas[i:end_idx]
+                    batch_meta = None
+                    if metadatas:
+                        batch_meta = metadatas[i:end_idx]
                     
-                    logger.debug(f"Adding batch {i//batch_size + 1}/{total_batches}")
+                    # Log batch information
+                    batch_num = i // batch_size + 1
+                    logger.info(f"Adding batch {batch_num}/{total_batches} to ChromaDB")
+                    logger.debug(f"Batch {batch_num} contains {len(batch_docs)} documents")
                     
-                    # Add batch to collection
-                    self.collection.add(
+                    # Add batch to collection - CRITICAL FIX: Don't convert metadata to JSON strings
+                    self._safe_collection_operation(
+                        f"add_batch_{batch_num}",
+                        self.collection.add,
                         documents=batch_docs,
                         embeddings=batch_embeddings,
                         ids=batch_ids,
-                        metadatas=batch_metadatas
+                        metadatas=batch_meta  # Pass metadata dictionaries directly
                     )
+                    
+                    logger.info(f"✓ Batch {batch_num}/{total_batches} added successfully")
                     
                     # Force garbage collection after each batch
                     gc.collect()
@@ -266,7 +353,52 @@ class VectorStoreService:
             
         except Exception as e:
             logger.error(f"Error adding documents to vector store: {str(e)}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
             raise RuntimeError(f"Failed to add documents to vector store: {str(e)}")
+    
+    def add_single_document(
+        self, 
+        document: str, 
+        embedding: List[float], 
+        doc_id: str, 
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Add a single document to the vector store.
+        
+        This method provides better error isolation by processing one document at a time.
+        
+        Args:
+            document: Document text content
+            embedding: Embedding vector
+            doc_id: Document identifier
+            metadata: Optional metadata dictionary
+            
+        Returns:
+            True if successful, False otherwise
+            
+        Raises:
+            RuntimeError: If document addition fails
+        """
+        logger.debug(f"Adding single document: {doc_id}")
+        
+        try:
+            with collection_lock:
+                # Add single document to collection
+                self._safe_collection_operation(
+                    f"add_document_{doc_id}",
+                    self.collection.add,
+                    documents=[document],
+                    embeddings=[embedding],
+                    ids=[doc_id],
+                    metadatas=[metadata] if metadata else None
+                )
+            
+            logger.debug(f"Document {doc_id} added successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add document {doc_id}: {str(e)}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            raise RuntimeError(f"Failed to add document {doc_id}: {str(e)}")
     
     def search(
         self, 
@@ -301,21 +433,30 @@ class VectorStoreService:
         self._check_available_memory()
         
         try:
-            logger.info(f"Searching for top {k} documents")
+            # Check if collection is empty
+            count = self.collection.count()
+            if count == 0:
+                logger.warning("Vector store is empty - no documents to search")
+                return []
+                
+            logger.info(f"Searching for top {k} documents among {count} total documents")
             
             # Prepare filter if provided
             filter_dict = None
             if filter_metadata:
-                filter_dict = {"$and": []}
+                # FIXED: Don't use JSON strings in filter, use direct dict comparison
+                filter_dict = {}
                 for key, value in filter_metadata.items():
-                    filter_dict["$and"].append({f"$contains": json.dumps({key: value})})
+                    filter_dict[key] = value
             
             # Query the collection with timeout
             with collection_lock:
                 start_time = time.time()
                 
                 # Add timeout to search operation
-                results = self.collection.query(
+                results = self._safe_collection_operation(
+                    "search",
+                    self.collection.query,
                     query_embeddings=[query_embedding],
                     n_results=k,
                     where=filter_dict,
@@ -330,12 +471,10 @@ class VectorStoreService:
             if results and 'ids' in results and len(results['ids']) > 0:
                 for i, doc_id in enumerate(results['ids'][0]):
                     try:
+                        # FIXED: No need to parse JSON, metadata should be a dict already
                         metadata = {}
                         if results.get('metadatas') and results['metadatas'][0][i]:
-                            try:
-                                metadata = json.loads(results['metadatas'][0][i])
-                            except json.JSONDecodeError:
-                                logger.warning(f"Error decoding metadata for document {doc_id}")
+                            metadata = results['metadatas'][0][i]
                         
                         documents.append({
                             "id": doc_id,
@@ -351,6 +490,7 @@ class VectorStoreService:
             
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
             # Return empty results rather than failing completely
             return []
     
@@ -371,20 +511,35 @@ class VectorStoreService:
             # Force small k for performance
             k = min(k, 2)
             
+            # Check if collection is empty first
+            count = self.collection.count()
+            if count == 0:
+                logger.warning("Vector store is empty - no documents to search")
+                return []
+            
+            # Add timeout to prevent hanging
+            start_time = time.time()
+            
             # Simplified search with minimal parameters
             with collection_lock:
-                results = self.collection.query(
+                results = self._safe_collection_operation(
+                    "quick_search",
+                    self.collection.query,
                     query_embeddings=[query_embedding],
                     n_results=k,
-                    include=['documents']
+                    include=['documents', 'ids']
                 )
+                
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.info(f"Quick search completed in {elapsed_ms:.2f}ms")
             
             # Simplified processing
             documents = []
             if results and 'documents' in results and len(results['documents']) > 0:
                 for i, doc_content in enumerate(results['documents'][0]):
+                    doc_id = results['ids'][0][i] if 'ids' in results and i < len(results['ids'][0]) else f"result_{i}"
                     documents.append({
-                        "id": f"result_{i}",
+                        "id": doc_id,
                         "content": doc_content,
                         "metadata": {"source": "unknown"}
                     })
@@ -392,7 +547,8 @@ class VectorStoreService:
             return documents
         except Exception as e:
             logger.error(f"Error in quick search: {str(e)}")
-            return []
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            return []  # Return empty results rather than failing
     
     def persist(self) -> None:
         """Persist changes to disk.
@@ -405,7 +561,10 @@ class VectorStoreService:
         try:
             if self._client:
                 logger.info("Persisting vector store changes to disk")
-                self.client.persist()
+                self._safe_collection_operation(
+                    "persist",
+                    self.client.persist
+                )
                 logger.info("Vector store persisted successfully")
         except Exception as e:
             logger.error(f"Error persisting vector store: {str(e)}")
@@ -427,18 +586,18 @@ class VectorStoreService:
             logger.info(f"Retrieving document with ID: {doc_id}")
             
             with collection_lock:
-                result = self.collection.get(
+                result = self._safe_collection_operation(
+                    f"get_document_{doc_id}",
+                    self.collection.get,
                     ids=[doc_id],
                     include=["documents", "metadatas"]
                 )
             
             if result and result["ids"] and len(result["ids"]) > 0:
+                # FIXED: No need to parse JSON, metadata should be a dict already
                 metadata = {}
                 if result.get("metadatas") and result["metadatas"][0]:
-                    try:
-                        metadata = json.loads(result["metadatas"][0])
-                    except json.JSONDecodeError:
-                        logger.warning(f"Error decoding metadata for document {doc_id}")
+                    metadata = result["metadatas"][0]
                 
                 return {
                     "id": doc_id,
@@ -451,7 +610,37 @@ class VectorStoreService:
             
         except Exception as e:
             logger.error(f"Error retrieving document by ID: {str(e)}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
             raise RuntimeError(f"Failed to retrieve document: {str(e)}")
+    
+    def get_collection_info(self) -> Dict[str, Any]:
+        """Get information about the collection.
+        
+        Returns:
+            Dictionary with collection information
+        """
+        try:
+            logger.info(f"Getting collection information for {self.collection_name}")
+            
+            # Get collection count
+            count = self.collection.count()
+            
+            # Get collection name and metadata
+            collection_info = {
+                "name": self.collection_name,
+                "document_count": count,
+                "persist_directory": self.persist_directory
+            }
+            
+            return collection_info
+        except Exception as e:
+            logger.error(f"Error getting collection info: {str(e)}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            return {
+                "name": self.collection_name,
+                "error": str(e),
+                "document_count": 0
+            }
     
     def unload_if_inactive(self, threshold_seconds: int = 3600):
         """Unload the client and collection if inactive for specified period.

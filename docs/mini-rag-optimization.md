@@ -13,6 +13,11 @@ The Mini-RAG system is currently experiencing performance issues, including slow
 
 ## Recommended Optimizations
 
+
+ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+
+
 ### 1. LLM Service Optimization
 
 The LLM service should be enhanced with:
