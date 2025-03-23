@@ -8,7 +8,7 @@ with disk-based persistence.
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from typing import List, Dict, Any, Optional, Tuple, Union, overload
+from typing import List, Dict, Any, Optional, Union
 import json
 import logging
 import os
@@ -17,7 +17,7 @@ import psutil
 from threading import Lock
 import gc
 
-from config import settings
+from config import settings, get_path
 from app.api.models import DocumentChunk
 
 # Configure logger
@@ -42,7 +42,8 @@ class VectorStoreService:
             persist_directory: Optional custom directory for vector store persistence
             collection_name: Optional custom collection name for vector store
         """
-        self.persist_directory = persist_directory or settings.VECTOR_DB_PATH
+        # Use get_path to properly resolve the directory path and avoid duplication
+        self.persist_directory = persist_directory or get_path(settings.VECTOR_DB_PATH)
         self.collection_name = collection_name or settings.VECTOR_DB_COLLECTION
         self._client = None
         self._collection = None
@@ -70,15 +71,9 @@ class VectorStoreService:
             
             logger.info("Initializing ChromaDB client")
             try:
-                # Use current Chroma API instead of deprecated configuration
+                # Simplified client initialization per current API standards
                 self._client = chromadb.PersistentClient(
-                    path=self.persist_directory,
-                    settings=ChromaSettings(
-                        anonymized_telemetry=False,
-                        # Add performance optimizations
-                        chroma_db_impl="duckdb+parquet",  # Ensure disk-based storage
-                        persist_directory=self.persist_directory
-                    )
+                    path=self.persist_directory
                 )
                 logger.info("ChromaDB client initialized successfully")
             except Exception as e:
