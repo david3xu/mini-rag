@@ -1,0 +1,43 @@
+version: '3'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_BACKEND_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./backend/models:/app/models
+      - ./backend/vector_db:/app/vector_db
+    environment:
+      - MODEL_PATH=/app/models/phi-2.gguf
+      - VECTOR_DB_PATH=/app/vector_db/chroma_db
+      - EMBEDDING_MODEL=/app/models/embeddings/all-MiniLM-L6-v2
+      - MODEL_N_CTX=2048
+      - CHUNK_SIZE=1000
+      - CHUNK_OVERLAP=100
+      - DEFAULT_BATCH_SIZE=8
+      - MEMORY_SAFETY_MARGIN_MB=512
+      - DEBUG=true
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'

@@ -2,7 +2,7 @@ sentence-transformers==2.2.2
 fastapi==0.103.1
 uvicorn==0.23.2
 chromadb==0.6.3
-llama-cpp-python==0.1.77
+llama-cpp-python==0.2.19
 pymupdf==1.22.5
 psutil==5.9.5
 huggingface-hub==0.22.1

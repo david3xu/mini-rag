@@ -22,6 +22,7 @@ mini-rag/
 │   ├── public/                     # Static assets
 │   ├── package.json                # Frontend dependencies
 │   ├── tsconfig.json               # TypeScript configuration
+│   ├── Dockerfile.dev              # Development Docker configuration
 │   └── .env files                  # Environment configurations
 │
 ├── backend/                        # Python FastAPI backend
@@ -39,6 +40,7 @@ mini-rag/
 │   ├── main.py                     # Application entry point
 │   ├── config.py                   # Configuration settings
 │   ├── debug_tests.py              # Debug utilities
+│   ├── Dockerfile.dev              # Development Docker configuration
 │   └── TESTING.md                  # Testing documentation
 │
 ├── docs/                           # Documentation
@@ -69,11 +71,41 @@ mini-rag/
 ### Getting Started
 
 1. Clone the repository
-2. Configure environment variables in `.env`
+2. Configure environment variables in `.env.local`
 3. Start the development environment:
    ```bash
    docker-compose up -d
    ```
+
+### Docker Development Environment
+
+The project includes a complete Docker development setup:
+
+- **docker-compose.yml**: Orchestrates both frontend and backend services
+- **frontend/Dockerfile.dev**: Development container for the React frontend
+- **backend/Dockerfile.dev**: Development container for the FastAPI backend
+
+Key features of the development environment:
+- Volume mounts for live code reloading
+- Automatic dependency installation
+- Pre-configured environment variables
+- Port mappings (3000 for frontend, 8000 for backend)
+- Resource limits for optimal performance
+
+To start the development environment:
+```bash
+# Start both services
+docker-compose up
+
+# Start in detached mode
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Rebuild containers after dependency changes
+docker-compose up --build
+```
 
 ### Testing
 
