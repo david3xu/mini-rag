@@ -11,10 +11,13 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import time
 import json
+import hashlib
 
 from app.services.embeddings import embeddings_service
 from app.services.vectorstore import vector_store
 from app.services.llm import llm_service
+from app.services.cache import response_cache, embedding_cache
+from app.services.monitoring import performance_monitor
 from config import settings
 
 # Create routers
@@ -30,7 +33,7 @@ class SourceMetadata(BaseModel):
     sub_chunk: Optional[int] = None
 
 class Source(BaseModel):
-    """Source document information."""
+    """Source document with content and metadata."""
     id: str
     content: str
     metadata: SourceMetadata
@@ -43,6 +46,13 @@ class QueryResponse(BaseModel):
     """Response to a user query."""
     answer: str
     sources: List[Source] = []
+
+# Common pre-computed responses for frequent queries
+PRECOMPUTED_RESPONSES = {
+    "what is mini-rag": "Mini-RAG is a lightweight Retrieval-Augmented Generation system designed for resource-efficient operation. It combines document processing, semantic search, and language model generation with optimized memory usage.",
+    "how does rag work": "Retrieval-Augmented Generation works by retrieving relevant information from a vector database based on semantic similarity to the user's query, then using this information as context for an LLM to generate an informed response.",
+    "memory optimization": "Mini-RAG implements several memory optimization techniques including lazy loading of models, batch processing with adaptive sizes, explicit memory cleanup, and resource monitoring with throttling."
+}
 
 @router.post("", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
@@ -62,33 +72,93 @@ async def process_query(request: QueryRequest):
         HTTPException: If processing fails
     """
     try:
+        start_time = time.time()
         print(f"[DEBUG] Received query: {request.query}")
         
-        # Generate query embedding
-        print("[DEBUG] Generating query embedding...")
-        start_time = time.time()
-        query_embedding = embeddings_service.generate_embedding(request.query)
-        print(f"[DEBUG] Embedding generated in {time.time() - start_time:.2f} seconds")
+        # Check for pre-computed responses
+        normalized_query = request.query.lower().strip()
+        for key, response in PRECOMPUTED_RESPONSES.items():
+            if normalized_query in key or key in normalized_query:
+                print(f"[DEBUG] Using pre-computed response for query: {request.query}")
+                
+                # Record full request time for pre-computed response
+                elapsed = time.time() - start_time
+                performance_monitor.record_response_time(elapsed)
+                
+                return QueryResponse(
+                    answer=response,
+                    sources=[]  # No sources for pre-computed responses
+                )
+        
+        # Generate cache key from query
+        cache_key = hashlib.md5(request.query.encode()).hexdigest()
+        
+        # Check cache first
+        cached_response = response_cache.get(cache_key)
+        if cached_response:
+            print(f"[DEBUG] Cache hit for query: {request.query}")
+            
+            # Record full request time for cached response
+            elapsed = time.time() - start_time
+            performance_monitor.record_response_time(elapsed)
+            
+            return cached_response
+        
+        # Generate query embedding (check embedding cache first)
+        cached_embedding = embedding_cache.get(request.query)
+        if cached_embedding:
+            print("[DEBUG] Using cached query embedding")
+            query_embedding = cached_embedding
+        else:
+            print("[DEBUG] Generating query embedding...")
+            embedding_start = time.time()
+            query_embedding = embeddings_service.generate_embedding(request.query)
+            embedding_time = time.time() - embedding_start
+            print(f"[DEBUG] Embedding generated in {embedding_time:.2f} seconds")
+            
+            # Record embedding time
+            performance_monitor.record_embedding_time(embedding_time)
+            
+            # Cache the embedding
+            embedding_cache.set(request.query, query_embedding)
         
         # Retrieve relevant documents
         print("[DEBUG] Searching vector store for relevant documents...")
-        start_time = time.time()
+        search_start = time.time()
         documents = vector_store.search(query_embedding)
-        print(f"[DEBUG] Retrieved {len(documents)} documents in {time.time() - start_time:.2f} seconds")
+        search_time = time.time() - search_start
+        print(f"[DEBUG] Retrieved {len(documents)} documents in {search_time:.2f} seconds")
+        
+        # Record search time
+        performance_monitor.record_search_time(search_time)
         
         # Generate prompt with context
         print("[DEBUG] Formatting RAG prompt...")
-        start_time = time.time()
+        prompt_start = time.time()
         prompt = llm_service.format_rag_prompt(request.query, documents)
-        print(f"[DEBUG] Prompt formatted in {time.time() - start_time:.2f} seconds")
+        print(f"[DEBUG] Prompt formatted in {time.time() - prompt_start:.2f} seconds")
         print(f"[DEBUG] Prompt length: {len(prompt)} characters")
         
         # Generate answer
         print("[DEBUG] Generating LLM response...")
-        start_time = time.time()
-        answer = llm_service.generate_text(prompt)
-        print(f"[DEBUG] Response generated in {time.time() - start_time:.2f} seconds")
+        llm_start = time.time()
+        
+        # Dynamically set thread count based on query complexity
+        thread_count = min(4, max(1, len(prompt) // 500))
+        print(f"[DEBUG] Using {thread_count} threads for generation")
+        
+        answer = llm_service.generate_text(
+            prompt,
+            max_tokens=512,
+            temperature=0.7,
+            thread_count=thread_count
+        )
+        llm_time = time.time() - llm_start
+        print(f"[DEBUG] Response generated in {llm_time:.2f} seconds")
         print(f"[DEBUG] Response length: {len(answer)} characters")
+        
+        # Record LLM time
+        performance_monitor.record_llm_time(llm_time)
         
         # Format response
         print("[DEBUG] Formatting final response...")
@@ -105,11 +175,30 @@ async def process_query(request: QueryRequest):
                 metadata=SourceMetadata(**doc["metadata"])
             ))
         
-        print("[DEBUG] Request processing complete, returning response")
-        return QueryResponse(
+        # Create final response
+        response = QueryResponse(
             answer=answer,
             sources=sources
         )
+        
+        # Store in cache before returning
+        response_cache.set(cache_key, response)
+        
+        # Record total response time
+        total_time = time.time() - start_time
+        performance_monitor.record_response_time(total_time)
+        print(f"[DEBUG] Total request processing time: {total_time:.2f} seconds")
+        
+        # Record memory info
+        import psutil
+        mem = psutil.virtual_memory()
+        performance_monitor.record_memory_usage({
+            "used_mb": mem.used / (1024 * 1024),
+            "available_mb": mem.available / (1024 * 1024),
+            "percent": mem.percent
+        })
+        
+        return response
     except Exception as e:
         print(f"[ERROR] Exception during query processing: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -132,8 +221,27 @@ async def process_query_stream(request: QueryRequest):
         HTTPException: If processing fails
     """
     try:
-        # Generate query embedding
-        query_embedding = embeddings_service.generate_embedding(request.query)
+        # Check for pre-computed responses first
+        normalized_query = request.query.lower().strip()
+        for key, response in PRECOMPUTED_RESPONSES.items():
+            if normalized_query in key or key in normalized_query:
+                print(f"[DEBUG] Using pre-computed response for streaming query")
+                
+                # For streaming, we need to convert to a generator
+                async def stream_precomputed():
+                    yield response
+                
+                return StreamingResponse(stream_precomputed(), media_type="text/plain")
+        
+        # Check embedding cache first
+        cached_embedding = embedding_cache.get(request.query)
+        if cached_embedding:
+            query_embedding = cached_embedding
+        else:
+            # Generate query embedding
+            query_embedding = embeddings_service.generate_embedding(request.query)
+            # Cache the embedding
+            embedding_cache.set(request.query, query_embedding)
         
         # Retrieve relevant documents
         documents = vector_store.search(query_embedding)
@@ -146,6 +254,59 @@ async def process_query_stream(request: QueryRequest):
             llm_service.generate_text(prompt, stream=True),
             media_type="text/plain"
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/quick")
+async def quick_response(request: QueryRequest):
+    """
+    Generate a quick response with minimal context.
+    
+    This is a lightweight endpoint for faster responses when
+    full context processing would be too slow.
+    
+    Args:
+        request: Query request
+        
+    Returns:
+        Quick response with limited information
+    """
+    try:
+        # Check for pre-computed responses
+        normalized_query = request.query.lower().strip()
+        for key, response in PRECOMPUTED_RESPONSES.items():
+            if normalized_query in key or key in normalized_query:
+                return {"answer": response, "is_complete": True}
+        
+        # Use cached embedding if available
+        cached_embedding = embedding_cache.get(request.query)
+        if cached_embedding:
+            query_embedding = cached_embedding
+        else:
+            query_embedding = embeddings_service.generate_embedding(request.query)
+            embedding_cache.set(request.query, query_embedding)
+        
+        # Get just one document with quick search
+        documents = vector_store.quick_search(query_embedding, k=1)
+        
+        if not documents:
+            return {"answer": "I don't have enough information to answer that question.", "is_complete": False}
+        
+        # Take just first 100 characters of context for speed
+        doc_content = documents[0]['content']
+        short_context = doc_content[:100] + ("..." if len(doc_content) > 100 else "")
+        
+        # Use a simplified prompt format for speed
+        prompt = f"Q:{request.query} C:{short_context} A:"
+        
+        # Generate with minimal settings
+        answer = llm_service.generate_text(
+            prompt,
+            max_tokens=50,
+            temperature=0.7
+        )
+        
+        return {"answer": answer, "is_complete": False}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -321,3 +482,9 @@ async def openai_compatible_chat(
             "total_tokens": (len(prompt) + len(answer)) // 4  # Rough estimation
         }
     }
+
+# Add performance endpoint
+@router.get("/performance")
+async def get_performance_stats():
+    """Get system performance statistics."""
+    return performance_monitor.get_stats()

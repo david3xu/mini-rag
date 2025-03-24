@@ -49,6 +49,8 @@ class VectorStoreService:
         self._collection = None
         self._metadata_cache = {}  # Cache for frequently accessed metadata
         self._last_access_time = time.time()
+        self._search_cache = {}  # Cache for search results
+        self._search_cache_size = 50  # Maximum number of cached searches
         
         logger.info(f"Vector store service initialized with path: {self.persist_directory}")
         
@@ -506,7 +508,7 @@ class VectorStoreService:
         query_embedding: List[float], 
         k: int = 3,
         filter_metadata: Optional[Dict[str, Any]] = None,
-        timeout_ms: int = 3000  # 3 second timeout
+        timeout_ms: int = settings.QUERY_TIMEOUT_MS  # Use configured timeout
     ) -> List[Dict[str, Any]]:
         """Search for similar documents with robust timeout handling.
         
@@ -521,18 +523,24 @@ class VectorStoreService:
             
         Raises:
             ValueError: If query_embedding is invalid
-            RuntimeError: If search operation fails
+            RuntimeError: If search operation fails in testing mode
         """
         if not query_embedding:
             logger.warning("Empty query embedding provided for search")
             raise ValueError("Query embedding cannot be empty")
+        
+        # Check cache first
+        cache_key = f"{str(query_embedding[:3])}_k{k}_filter{filter_metadata}"
+        if cache_key in self._search_cache:
+            logger.info("Using cached vector search results")
+            return self._search_cache[cache_key]
         
         # Enforce performance constraints
         k = min(k, 5)  # Cap at 5 results for resource efficiency
         
         # Memory optimization before search
         self._check_available_memory()
-        gc.collect()  # Force garbage collection to optimize memory
+        gc.collect()
         
         try:
             # Access collection without lock to ensure we have it initialized
@@ -571,10 +579,18 @@ class VectorStoreService:
             if results and 'ids' in results and len(results['ids']) > 0:
                 for i, doc_id in enumerate(results['ids'][0]):
                     try:
-                        # Extract metadata (already in dict format)
+                        # Extract metadata with better error handling
                         metadata = {}
                         if results.get('metadatas') and results['metadatas'][0][i]:
-                            metadata = results['metadatas'][0][i]
+                            meta_val = results['metadatas'][0][i]
+                            # Handle string or dict metadata
+                            if isinstance(meta_val, str):
+                                try:
+                                    metadata = json.loads(meta_val)
+                                except json.JSONDecodeError:
+                                    metadata = {"source": meta_val}
+                            else:
+                                metadata = meta_val
                         
                         # Build document result
                         documents.append({
@@ -583,16 +599,35 @@ class VectorStoreService:
                             "metadata": metadata,
                             "distance": results.get('distances', [[0]])[0][i] if results.get('distances') else None
                         })
+                        
+                        # Debug log the source for investigation
+                        logger.debug(f"Source metadata: {metadata}")
                     except Exception as item_error:
                         logger.error(f"Error processing search result {i}: {str(item_error)}")
+                        logger.error(f"Stack trace: {traceback.format_exc()}")
             
             logger.info(f"Search returned {len(documents)} documents")
+            
+            # Cache results before returning
+            if len(self._search_cache) >= self._search_cache_size:
+                # Remove a random key to avoid computation overhead
+                if self._search_cache:
+                    self._search_cache.pop(next(iter(self._search_cache)))
+            
+            self._search_cache[cache_key] = documents
             return documents
             
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}")
             logger.error(f"Stack trace: {traceback.format_exc()}")
-            return []  # Return empty results rather than failing completely
+            logger.error(f"Search parameters: k={k}, filter={filter_metadata}")
+            
+            # During testing, we should raise the exception to debug
+            import sys
+            if 'pytest' in sys.modules:
+                raise
+                
+            return []  # In production, still return empty to avoid breaking the app
         finally:
             # Ensure memory cleanup
             gc.collect()

@@ -12,6 +12,8 @@ Mini-RAG allows users to upload documents, process them into vector embeddings, 
 - **Backend**: FastAPI Python service
 - **Vector Database**: ChromaDB for efficient vector storage
 - **LLM Integration**: Support for local models like phi-2.gguf
+- **Performance Monitoring**: Real-time system metrics and response timing
+- **Caching**: Multi-level cache for responses and embeddings
 
 ## Directory Structure
 
@@ -29,6 +31,11 @@ mini-rag/
 │   ├── app/                        # Backend application code
 │   │   ├── api/                    # API endpoints
 │   │   └── services/               # Service implementations
+│   │       ├── cache.py            # Caching service
+│   │       ├── vectorstore.py      # Vector storage service
+│   │       ├── embeddings.py       # Embedding service
+│   │       ├── llm.py              # LLM text generation service
+│   │       └── monitoring.py       # Performance monitoring service
 │   ├── data/                       # Document storage
 │   │   ├── uploads/                # Uploaded documents
 │   │   └── processed/              # Processed documents
@@ -40,10 +47,12 @@ mini-rag/
 │   ├── main.py                     # Application entry point
 │   ├── config.py                   # Configuration settings
 │   ├── debug_tests.py              # Debug utilities
+│   ├── install_optimized_llama.sh  # Optimization script for llama-cpp-python
 │   ├── Dockerfile.dev              # Development Docker configuration
 │   └── TESTING.md                  # Testing documentation
 │
 ├── docs/                           # Documentation
+│   └── improvements/               # Improvement guides and strategies
 ├── .env.local                      # Environment variables
 ├── requirements.txt                # Python dependencies
 ├── docker-compose.yml              # Development configuration
@@ -59,6 +68,21 @@ mini-rag/
 - Resource-optimized implementation suitable for constrained environments
 - Docker-based deployment for both development and production
 - Comprehensive test suite for backend components
+- Performance monitoring and metrics dashboard
+- Multi-level caching system for responses and embeddings
+- Tiered response system with quick mode for faster responses
+
+## Performance Optimizations
+
+Mini-RAG includes several performance optimizations for resource-constrained environments:
+
+- **Caching System**: Multi-level caching for responses and embeddings reduces redundant operations
+- **Memory Management**: Adaptive batch sizes, explicit memory cleanup, and resource monitoring
+- **Computational Optimizations**: BLAS-accelerated matrix operations (via `install_optimized_llama.sh`)
+- **Thread Optimization**: Dynamic thread allocation based on query complexity
+- **Context Window Tuning**: Optimized prompt formatting for faster inference
+- **KV Cache Reuse**: Key-value cache reuse for similar or follow-up queries
+- **Tiered Response System**: `/api/chat/quick` endpoint for faster responses with minimal context
 
 ## Development
 
@@ -76,15 +100,23 @@ mini-rag/
 3. Start the development environment using one of these methods:
 
    a. Using Docker Compose directly:
+
    ```bash
    docker-compose up -d
    ```
 
    b. Using VS Code Dev Containers:
+
    - Open the project in VS Code
    - Click on the green button in the bottom-left corner
    - Select "Reopen in Container"
    - VS Code will build and start the containers automatically
+
+4. (Optional) Install optimized BLAS support for improved performance:
+   ```bash
+   cd backend
+   sudo ./install_optimized_llama.sh
+   ```
 
 ### Docker Development Environment
 
@@ -95,6 +127,7 @@ The project includes a complete Docker development setup:
 - **backend/Dockerfile.dev**: Development container for the FastAPI backend
 
 Key features of the development environment:
+
 - Volume mounts for live code reloading
 - Automatic dependency installation
 - Pre-configured environment variables
@@ -102,6 +135,7 @@ Key features of the development environment:
 - Resource limits for optimal performance
 
 To start the development environment:
+
 ```bash
 # Start both services
 docker-compose up
@@ -133,6 +167,17 @@ python -m pytest --cov=app
 
 See [backend/TESTING.md](backend/TESTING.md) for detailed testing documentation.
 
+## Performance Monitoring
+
+Mini-RAG includes a built-in performance monitoring system that tracks:
+
+- Response times for each component (embeddings, vector search, LLM generation)
+- Memory usage statistics
+- Request throughput and latency
+- Cache hit rates and efficiency
+
+Access the metrics dashboard at `/api/chat/performance` to view real-time system performance data.
+
 ## Path Management
 
 The system uses a path resolution system to prevent duplicate directory issues:
@@ -149,6 +194,10 @@ correct_path = get_path("vector_db/chroma_db")
 - **Cleanup Script**: `backend/clean_duplicate_dirs.py` fixes duplicate directory issues
   ```bash
   cd backend && python clean_duplicate_dirs.py
+  ```
+- **Optimization Script**: `backend/install_optimized_llama.sh` installs llama-cpp-python with BLAS support
+  ```bash
+  cd backend && sudo ./install_optimized_llama.sh
   ```
 
 ## Azure Deployment

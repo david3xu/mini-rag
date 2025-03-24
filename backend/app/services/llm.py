@@ -41,6 +41,8 @@ class LLMService:
         self._n_gpu_layers = settings.MODEL_N_GPU_LAYERS
         self.last_used_time = 0
         self._is_loading = False
+        self._kv_cache = None
+        self._last_prompt = None
         
         logger.info(f"LLM service initialized with model path: {self._model_path}")
         
@@ -147,7 +149,9 @@ class LLMService:
         max_tokens: int = 512, 
         temperature: float = 0.7,
         stream: bool = False,
-        timeout_seconds: int = 30
+        timeout_seconds: int = 30,
+        thread_count: Optional[int] = None,
+        reuse_cache: bool = True
     ) -> Union[str, Generator[str, None, None]]:
         """Generate text from the LLM.
         
@@ -157,6 +161,8 @@ class LLMService:
             temperature: Sampling temperature (0.0-1.0)
             stream: Whether to stream the response
             timeout_seconds: Maximum time to wait for generation
+            thread_count: Number of threads to use (None = use default)
+            reuse_cache: Whether to reuse KV cache for similar prompts
             
         Returns:
             Generated text or a generator yielding text chunks
@@ -178,6 +184,22 @@ class LLMService:
             # Apply shorter context for faster generation
             actual_max_tokens = min(max_tokens, self._n_ctx - len(formatted_prompt) // 4)
             
+            # Set thread count for generation
+            if thread_count is None:
+                thread_count = min(4, os.cpu_count() or 1)
+            else:
+                thread_count = max(1, min(thread_count, os.cpu_count() or 1))
+            
+            logger.info(f"Using {thread_count} threads for generation")
+            
+            # Check if we can reuse KV cache
+            cache_hit = False
+            if reuse_cache and hasattr(self, '_kv_cache') and self._kv_cache is not None and hasattr(self, '_last_prompt') and self._last_prompt is not None:
+                # Reuse cache if the new prompt starts with the previous prompt
+                if prompt.startswith(self._last_prompt) and len(prompt) - len(self._last_prompt) < 20:
+                    cache_hit = True
+                    logger.info("Reusing KV cache for similar prompt")
+            
             if not stream:
                 # Generate complete response with timeout handling
                 start_time = time.time()
@@ -185,13 +207,25 @@ class LLMService:
                 # Memory optimization: before large operation
                 gc.collect()
                 
+                # Set cache parameters
+                cache_params = {}
+                if cache_hit:
+                    cache_params = {"cache": self._kv_cache}
+                
                 response = self.llm(
                     formatted_prompt,
                     max_tokens=actual_max_tokens,
                     temperature=temperature,
                     echo=False,
-                    stop=["</s>", "<s>"]  # Stop at special tokens
+                    stop=["</s>", "<s>"],  # Stop at special tokens
+                    n_threads=thread_count,
+                    **cache_params
                 )
+                
+                # Store KV cache and prompt for potential reuse
+                if not cache_hit and hasattr(response, "get"):
+                    self._kv_cache = response.get("cache", None)
+                    self._last_prompt = prompt
                 
                 elapsed = time.time() - start_time
                 if elapsed > 5:  # Log slow generations
@@ -200,13 +234,13 @@ class LLMService:
                 return response["choices"][0]["text"].strip()
             else:
                 # Return generator for streaming response
-                return self._generate_streaming_response(formatted_prompt, actual_max_tokens, temperature, timeout_seconds)
+                return self._generate_streaming_response(formatted_prompt, actual_max_tokens, temperature, timeout_seconds, thread_count)
         except Exception as e:
             logger.error(f"Error during text generation: {str(e)}")
             raise RuntimeError(f"Failed to generate text: {str(e)}")
     
     def _generate_streaming_response(
-        self, prompt: str, max_tokens: int, temperature: float, timeout_seconds: int
+        self, prompt: str, max_tokens: int, temperature: float, timeout_seconds: int, thread_count: int = 1
     ) -> Generator[str, None, None]:
         """Generate streaming text response.
         
@@ -215,6 +249,7 @@ class LLMService:
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             timeout_seconds: Maximum generation time
+            thread_count: Number of threads to use
             
         Yields:
             Text chunks as they are generated
@@ -236,7 +271,8 @@ class LLMService:
                 temperature=temperature,
                 echo=False,
                 stream=True,
-                stop=["</s>", "<s>"]  # Stop at special tokens
+                stop=["</s>", "<s>"],  # Stop at special tokens
+                n_threads=thread_count
             ):
                 # Check timeout
                 if time.time() - start_time > timeout_seconds:

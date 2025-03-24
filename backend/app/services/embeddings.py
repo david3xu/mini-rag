@@ -14,6 +14,7 @@ import time
 import logging
 
 from config import settings
+from app.services.cache import embedding_cache
 
 # Configure logger
 logging.basicConfig(level=logging.INFO)
@@ -212,10 +213,10 @@ class EmbeddingService:
         """Generate embedding for a single text string.
         
         Args:
-            text: Text string to embed
+            text: Text to embed
         
         Returns:
-            Embedding vector as a list of floats
+            Embedding vector as list of floats
             
         Raises:
             ValueError: If text is empty
@@ -223,14 +224,36 @@ class EmbeddingService:
         """
         if not text.strip():
             logger.warning("Empty text provided for embedding generation")
-            raise ValueError("Cannot generate embedding for empty text")
+            raise ValueError("Cannot generate embedding from empty text")
         
         try:
-            # Generate embedding for single text (no need for batching)
-            embedding = self.model.encode([text])[0].tolist()
-            return embedding
+            # Check cache first
+            cached_embedding = embedding_cache.get(text)
+            if cached_embedding:
+                logger.debug(f"Using cached embedding for text: {text[:30]}...")
+                return cached_embedding
+            
+            logger.info(f"Generating embedding for text: {text[:30]}...")
+            
+            # Update last used timestamp
+            self.last_used_time = time.time()
+            
+            # Normalize text to improve vector relevance
+            # (lowercase, strip extra whitespace)
+            normalized_text = text.lower().strip()
+            
+            # Generate embedding
+            embedding = self.model.encode(normalized_text)
+            
+            # Convert to list (Chroma expects list format)
+            embedding_list = embedding.tolist()
+            
+            # Cache the result
+            embedding_cache.set(text, embedding_list)
+            
+            return embedding_list
         except Exception as e:
-            logger.error(f"Error generating single embedding: {str(e)}")
+            logger.error(f"Error generating embedding: {str(e)}")
             raise RuntimeError(f"Failed to generate embedding: {str(e)}")
     
     def cosine_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
