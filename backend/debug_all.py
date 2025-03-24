@@ -18,7 +18,7 @@ sys.path.append('./backend')  # Add the backend directory to the path
 # Imports for test client
 try:
     from fastapi.testclient import TestClient
-    from app.main import app
+    from main import app
     from app.api.models import DocumentChunk
     from app.api.health import ResourceMetrics  # Fixed import for ResourceMetrics
     from app.services.vectorstore import VectorStoreService
@@ -244,7 +244,7 @@ def test_vectorstore_add_documents():
         except Exception as e:
             print(f"✗ Error in test: {str(e)}")
 
-def test_vectorstore_similarity_search():
+def test_vectorstore_search():
     """Test performing similarity search."""
     print_separator("TESTING SIMILARITY SEARCH IN VECTORSTORE")
     
@@ -283,7 +283,7 @@ def test_vectorstore_similarity_search():
             query_embedding = embeddings_service.generate_embedding(query)
             
             print("\nPerforming similarity search...")
-            results = service.similarity_search(query, query_embedding, k=3)
+            results = service.search(query_embedding, k=3)
             
             # Print results
             print(f"\nSearch returned {len(results)} results:")
@@ -312,7 +312,7 @@ def run_all_tests():
     # Run vector store tests
     test_vectorstore_initialization()
     test_vectorstore_add_documents()
-    test_vectorstore_similarity_search()
+    test_vectorstore_search()
     
     # Print summary
     elapsed_time = time.time() - start_time

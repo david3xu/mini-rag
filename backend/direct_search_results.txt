@@ -1,0 +1,21 @@
+INFO:app.services.embeddings:Backend directory: /home/291928k/uwa/alcoa/mini-rag/backend
+INFO:app.services.embeddings:Embedding model path verified: /home/291928k/uwa/alcoa/mini-rag/backend/models/embeddings/all-MiniLM-L6-v2
+INFO:app.services.embeddings:Embedding service initialized with model: /home/291928k/uwa/alcoa/mini-rag/backend/models/embeddings/all-MiniLM-L6-v2
+INFO:app.services.embeddings:Loading embedding model: /home/291928k/uwa/alcoa/mini-rag/backend/models/embeddings/all-MiniLM-L6-v2
+INFO:sentence_transformers.SentenceTransformer:Load pretrained SentenceTransformer: /home/291928k/uwa/alcoa/mini-rag/backend/models/embeddings/all-MiniLM-L6-v2
+INFO:app.services.embeddings:Embedding model loaded successfully
+=== Direct ChromaDB Search Test ===
+Generating test embedding...
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|██████████| 1/1 [00:00<00:00, 148.10it/s]
+INFO:chromadb.telemetry.product.posthog:Anonymized telemetry enabled. See                     https://docs.trychroma.com/telemetry for more information.
+WARNING:chromadb.segment.impl.vector.local_persistent_hnsw:Add of existing embedding ID: doc1
+WARNING:chromadb.segment.impl.vector.local_persistent_hnsw:Add of existing embedding ID: doc2
+WARNING:chromadb.segment.impl.vector.local_persistent_hnsw:Add of existing embedding ID: doc3
+WARNING:chromadb.segment.impl.vector.local_persistent_hnsw:Add of existing embedding ID: doc4
+Creating direct ChromaDB client at /home/291928k/uwa/alcoa/mini-rag/backend/vector_db/chroma_db...
+Getting collection 'documents'...
+Collection contains 4 documents
+Executing direct search...
+Search completed in 0.08s
+Found 1 results:
+  Result 1: [ID: doc2] Vector search uses embeddings to find semantically similar documents.

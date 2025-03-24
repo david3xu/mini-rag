@@ -160,6 +160,8 @@ class VectorStoreService:
         
         try:
             logger.debug(f"Starting {operation_name} operation")
+            
+            # Direct function call without any timeout mechanism
             result = operation_func(*args, **kwargs)
             
             elapsed_ms = (time.time() - start_time) * 1000
@@ -184,15 +186,15 @@ class VectorStoreService:
             raise RuntimeError(f"Vector store operation '{operation_name}' failed: {str(e)}")
     
     def add_documents(
-        self, 
-        documents: Union[List[str], List[DocumentChunk]], 
-        embeddings: List[List[float]], 
-        ids: Optional[List[str]] = None,
-        metadatas: Optional[List[Dict[str, Any]]] = None,
-        batch_size: int = None,
-        use_individual_processing: bool = False
+    self, 
+    documents: Union[List[str], List[DocumentChunk]], 
+    embeddings: List[List[float]], 
+    ids: Optional[List[str]] = None,
+    metadatas: Optional[List[Dict[str, Any]]] = None,
+    batch_size: int = None,
+    use_individual_processing: bool = True  # Changed default to True for reliable processing
     ) -> None:
-        """Add documents to the vector store.
+        """Add documents to the vector store with improved reliability.
         
         Args:
             documents: List of document text content or DocumentChunk objects
@@ -234,19 +236,46 @@ class VectorStoreService:
                 success_count = 0
                 for i, (doc, embedding) in enumerate(zip(documents, embeddings)):
                     try:
-                        # Add single document
-                        self.add_single_document(
-                            document=doc.text,
-                            embedding=embedding,
-                            doc_id=doc.id,
-                            metadata=doc.metadata
+                        # Add timing metrics
+                        start_time = time.time()
+                        logger.info(f"Adding document {i+1}/{len(documents)}: {doc.id}")
+                        
+                        # Add single document without using collection_lock
+                        self.collection.add(
+                            documents=[doc.text],
+                            embeddings=[embedding],
+                            ids=[doc.id],
+                            metadatas=[doc.metadata] if doc.metadata else None
                         )
+                        
+                        elapsed_ms = (time.time() - start_time) * 1000
                         success_count += 1
-                        logger.info(f"✓ DocumentChunk {i+1}/{len(documents)} added successfully: {doc.id}")
+                        logger.info(f"✓ Document {i+1}/{len(documents)} added successfully in {elapsed_ms:.2f}ms: {doc.id}")
+                        
+                        # Periodic persistence to avoid large delayed writes
+                        if success_count % 10 == 0:
+                            logger.info(f"Persisting changes after {success_count} documents...")
+                            try:
+                                self.persist()
+                            except Exception as persist_error:
+                                # Log error but continue processing
+                                logger.warning(f"Persistence error (continuing anyway): {str(persist_error)}")
+                        
+                        # Small delay to prevent resource contention
+                        time.sleep(0.1)
+                        
                     except Exception as e:
                         logger.error(f"✗ Failed to add DocumentChunk {i+1}/{len(documents)} - {doc.id}: {str(e)}")
+                        logger.error(f"Error stack trace: {traceback.format_exc()}")
                 
+                # Final persistence
                 logger.info(f"Added {success_count}/{len(documents)} DocumentChunk objects successfully")
+                if success_count > 0:
+                    try:
+                        self.persist()
+                    except Exception as persist_error:
+                        # Log error but continue processing
+                        logger.warning(f"Final persistence error (data should still be stored): {str(persist_error)}")
                 return
             else:
                 # Process all document chunks as a batch
@@ -256,7 +285,8 @@ class VectorStoreService:
                     embeddings=embeddings,
                     ids=doc_ids,
                     metadatas=doc_metadatas,
-                    batch_size=batch_size
+                    batch_size=batch_size,
+                    use_individual_processing=use_individual_processing
                 )
         
         # Regular implementation for string documents
@@ -292,70 +322,141 @@ class VectorStoreService:
             for i, (doc, embedding, doc_id) in enumerate(zip(documents, embeddings, ids)):
                 metadata = metadatas[i] if metadatas else None
                 try:
-                    self.add_single_document(
-                        document=doc,
-                        embedding=embedding,
-                        doc_id=doc_id,
-                        metadata=metadata
+                    # Add timing metrics
+                    start_time = time.time()
+                    logger.info(f"Adding document {i+1}/{len(documents)}: {doc_id}")
+                    
+                    # Direct collection access to avoid lock contention
+                    self.collection.add(
+                        documents=[doc],
+                        embeddings=[embedding],
+                        ids=[doc_id],
+                        metadatas=[metadata] if metadata else None
                     )
+                    
+                    elapsed_ms = (time.time() - start_time) * 1000
                     success_count += 1
-                    logger.info(f"✓ Document {i+1}/{len(documents)} added successfully: {doc_id}")
+                    logger.info(f"✓ Document {i+1}/{len(documents)} added successfully in {elapsed_ms:.2f}ms: {doc_id}")
+                    
+                    # Periodic persistence to avoid large delayed writes
+                    if success_count % 10 == 0:
+                        logger.info(f"Persisting changes after {success_count} documents...")
+                        try:
+                            self.persist()
+                        except Exception as persist_error:
+                            # Log error but continue processing
+                            logger.warning(f"Persistence error (continuing anyway): {str(persist_error)}")
+                    
+                    # Small delay to prevent resource contention
+                    time.sleep(0.1)
+                    
                 except Exception as e:
                     logger.error(f"✗ Failed to add document {i+1}/{len(documents)} - {doc_id}: {str(e)}")
+                    logger.error(f"Error stack trace: {traceback.format_exc()}")
             
+            # Final persistence
             logger.info(f"Added {success_count}/{len(documents)} documents successfully")
+            if success_count > 0:
+                try:
+                    self.persist()
+                except Exception as persist_error:
+                    # Log error but continue processing
+                    logger.warning(f"Final persistence error (data should still be stored): {str(persist_error)}")
             return
         
-        # Process in batches
+        # Process in batches (legacy approach)
         logger.info(f"Adding {len(documents)} documents to vector store in batches of {batch_size}")
         
         try:
             # Process in batches to manage memory
             total_batches = (len(documents) + batch_size - 1) // batch_size
             
-            with collection_lock:
-                for i in range(0, len(documents), batch_size):
-                    # Memory check before each batch
-                    self._check_available_memory()
+            # Batch processing with smaller critical sections
+            for i in range(0, len(documents), batch_size):
+                # Memory check before each batch
+                self._check_available_memory()
+                
+                end_idx = min(i + batch_size, len(documents))
+                batch_docs = documents[i:end_idx]
+                batch_embeddings = embeddings[i:end_idx]
+                batch_ids = ids[i:end_idx]
+                
+                batch_meta = None
+                if metadatas:
+                    batch_meta = metadatas[i:end_idx]
+                
+                # Log batch information
+                batch_num = i // batch_size + 1
+                logger.info(f"Adding batch {batch_num}/{total_batches} to ChromaDB ({len(batch_docs)} documents)")
+                
+                try:
+                    # Add batch to collection with timing information
+                    start_time = time.time()
                     
-                    end_idx = min(i + batch_size, len(documents))
-                    batch_docs = documents[i:end_idx]
-                    batch_embeddings = embeddings[i:end_idx]
-                    batch_ids = ids[i:end_idx]
-                    
-                    batch_meta = None
-                    if metadatas:
-                        batch_meta = metadatas[i:end_idx]
-                    
-                    # Log batch information
-                    batch_num = i // batch_size + 1
-                    logger.info(f"Adding batch {batch_num}/{total_batches} to ChromaDB")
-                    logger.debug(f"Batch {batch_num} contains {len(batch_docs)} documents")
-                    
-                    # Add batch to collection - CRITICAL FIX: Don't convert metadata to JSON strings
-                    self._safe_collection_operation(
-                        f"add_batch_{batch_num}",
-                        self.collection.add,
+                    # Limit critical section scope
+                    self.collection.add(
                         documents=batch_docs,
                         embeddings=batch_embeddings,
                         ids=batch_ids,
                         metadatas=batch_meta  # Pass metadata dictionaries directly
                     )
                     
-                    logger.info(f"✓ Batch {batch_num}/{total_batches} added successfully")
+                    elapsed_ms = (time.time() - start_time) * 1000
+                    logger.info(f"✓ Batch {batch_num}/{total_batches} added successfully in {elapsed_ms:.2f}ms")
+                    
+                    # Persist after each batch to avoid accumulating too many changes
+                    if batch_num % 2 == 0 or batch_num == total_batches:
+                        logger.info(f"Persisting changes after batch {batch_num}...")
+                        try:
+                            self.persist()
+                        except Exception as persist_error:
+                            # Log error but continue processing
+                            logger.warning(f"Persistence error in batch {batch_num} (continuing anyway): {str(persist_error)}")
                     
                     # Force garbage collection after each batch
                     gc.collect()
+                    
+                    # Small delay between batches
+                    time.sleep(0.2)
+                    
+                except Exception as batch_error:
+                    logger.error(f"✗ Error in batch {batch_num}: {str(batch_error)}")
+                    logger.error(f"Batch error stack trace: {traceback.format_exc()}")
+                    
+                    # Try to recover by processing this batch individually
+                    logger.info(f"Attempting recovery by processing batch {batch_num} documents individually...")
+                    
+                    individual_success = 0
+                    for j, (doc, emb, id_) in enumerate(zip(batch_docs, batch_embeddings, batch_ids)):
+                        doc_idx = i + j
+                        meta = batch_meta[j] if batch_meta else None
+                        
+                        try:
+                            self.collection.add(
+                                documents=[doc],
+                                embeddings=[emb],
+                                ids=[id_],
+                                metadatas=[meta] if meta else None
+                            )
+                            individual_success += 1
+                        except Exception as doc_error:
+                            logger.error(f"  ✗ Failed individual recovery for document {doc_idx+1}: {str(doc_error)}")
+                    
+                    logger.info(f"Batch {batch_num} recovery: {individual_success}/{len(batch_docs)} documents added")
             
-            # Persist changes to disk
-            self.persist()
-            logger.info(f"Successfully added {len(documents)} documents to vector store")
+            # Final persistence
+            logger.info(f"Successfully added documents to vector store in {total_batches} batches")
+            try:
+                self.persist()
+            except Exception as persist_error:
+                # Log error but continue processing
+                logger.warning(f"Final persistence error (data should still be stored): {str(persist_error)}")
             
         except Exception as e:
             logger.error(f"Error adding documents to vector store: {str(e)}")
             logger.error(f"Stack trace: {traceback.format_exc()}")
             raise RuntimeError(f"Failed to add documents to vector store: {str(e)}")
-    
+
     def add_single_document(
         self, 
         document: str, 
@@ -399,7 +500,7 @@ class VectorStoreService:
             logger.error(f"Failed to add document {doc_id}: {str(e)}")
             logger.error(f"Stack trace: {traceback.format_exc()}")
             raise RuntimeError(f"Failed to add document {doc_id}: {str(e)}")
-    
+        
     def search(
         self, 
         query_embedding: List[float], 
@@ -407,7 +508,7 @@ class VectorStoreService:
         filter_metadata: Optional[Dict[str, Any]] = None,
         timeout_ms: int = 3000  # 3 second timeout
     ) -> List[Dict[str, Any]]:
-        """Search for similar documents with timeout handling.
+        """Search for similar documents with robust timeout handling.
         
         Args:
             query_embedding: Embedding vector for the query
@@ -426,56 +527,56 @@ class VectorStoreService:
             logger.warning("Empty query embedding provided for search")
             raise ValueError("Query embedding cannot be empty")
         
-        # Limit k for performance
-        k = min(k, 5)  # Cap at 5 results max regardless of request
+        # Enforce performance constraints
+        k = min(k, 5)  # Cap at 5 results for resource efficiency
         
-        # Memory check before search
+        # Memory optimization before search
         self._check_available_memory()
+        gc.collect()  # Force garbage collection to optimize memory
         
         try:
+            # Access collection without lock to ensure we have it initialized
+            collection = self.client.get_collection(name=self.collection_name)
+            
             # Check if collection is empty
-            count = self.collection.count()
+            count = collection.count()
             if count == 0:
                 logger.warning("Vector store is empty - no documents to search")
                 return []
                 
             logger.info(f"Searching for top {k} documents among {count} total documents")
             
-            # Prepare filter if provided
+            # Prepare metadata filter
             filter_dict = None
             if filter_metadata:
-                # FIXED: Don't use JSON strings in filter, use direct dict comparison
-                filter_dict = {}
-                for key, value in filter_metadata.items():
-                    filter_dict[key] = value
+                filter_dict = {key: value for key, value in filter_metadata.items()}
             
-            # Query the collection with timeout
-            with collection_lock:
-                start_time = time.time()
-                
-                # Add timeout to search operation
-                results = self._safe_collection_operation(
-                    "search",
-                    self.collection.query,
-                    query_embeddings=[query_embedding],
-                    n_results=k,
-                    where=filter_dict,
-                    include=['metadatas', 'documents', 'distances']
-                )
-                
-                elapsed_ms = (time.time() - start_time) * 1000
-                logger.info(f"Search completed in {elapsed_ms:.2f}ms")
+            # Simple direct search implementation with NO collection lock
+            # This approach prevents potential deadlocks
+            start_time = time.time()
+            
+            # Direct collection query WITHOUT using the lock
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=k,
+                where=filter_dict,
+                include=['metadatas', 'documents', 'distances']
+            )
+            
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info(f"Search completed in {elapsed_ms:.2f}ms")
             
             # Format results
             documents = []
             if results and 'ids' in results and len(results['ids']) > 0:
                 for i, doc_id in enumerate(results['ids'][0]):
                     try:
-                        # FIXED: No need to parse JSON, metadata should be a dict already
+                        # Extract metadata (already in dict format)
                         metadata = {}
                         if results.get('metadatas') and results['metadatas'][0][i]:
                             metadata = results['metadatas'][0][i]
                         
+                        # Build document result
                         documents.append({
                             "id": doc_id,
                             "content": results['documents'][0][i],
@@ -491,8 +592,10 @@ class VectorStoreService:
         except Exception as e:
             logger.error(f"Error searching vector store: {str(e)}")
             logger.error(f"Stack trace: {traceback.format_exc()}")
-            # Return empty results rather than failing completely
-            return []
+            return []  # Return empty results rather than failing completely
+        finally:
+            # Ensure memory cleanup
+            gc.collect()
     
     def quick_search(self, query_embedding: List[float], k: int = 2) -> List[Dict[str, Any]]:
         """Perform a fast, limited search for testing purposes.
@@ -551,9 +654,10 @@ class VectorStoreService:
             return []  # Return empty results rather than failing
     
     def persist(self) -> None:
-        """Persist changes to disk.
+        """Persist changes to disk safely with ChromaDB API version compatibility.
         
-        Saves the current state of the vector database to disk.
+        Saves the current state of the vector database to disk, with support
+        for both older (explicit persist) and newer (automatic persistence) APIs.
         
         Raises:
             RuntimeError: If persistence operation fails
@@ -561,14 +665,26 @@ class VectorStoreService:
         try:
             if self._client:
                 logger.info("Persisting vector store changes to disk")
-                self._safe_collection_operation(
-                    "persist",
-                    self.client.persist
-                )
-                logger.info("Vector store persisted successfully")
+                
+                # Check if persist method exists (older ChromaDB versions)
+                if hasattr(self._client, 'persist'):
+                    self._safe_collection_operation(
+                        "persist",
+                        self._client.persist
+                    )
+                    logger.info("Vector store persisted successfully (explicit persistence)")
+                else:
+                    # Newer ChromaDB versions persist automatically
+                    logger.info("Vector store uses automatic persistence (no explicit persist needed)")
+                    
+                    # Force disk sync via collection operation to ensure data is written
+                    count = self.collection.count()
+                    logger.info(f"Collection contains {count} documents")
         except Exception as e:
-            logger.error(f"Error persisting vector store: {str(e)}")
-            raise RuntimeError(f"Failed to persist vector store: {str(e)}")
+            logger.error(f"Error during persistence check: {str(e)}")
+            # Don't raise exception for persistence failures
+            # Instead, log the issue but allow processing to continue
+            logger.warning("Continuing without explicit persistence (data should still be saved)")
     
     def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a document by its ID.

@@ -62,7 +62,7 @@ class TestVectorStoreService:
             assert count == 3
             print("✓ Documents added successfully!")
     
-    def test_similarity_search(self):
+    def test_search(self):
         """Test performing similarity search with the vector store."""
         print("\n=== Testing similarity search in vector store ===")
         # Create a temporary directory for the vector store
@@ -96,7 +96,7 @@ class TestVectorStoreService:
             
             # Perform search
             print("Performing similarity search...")
-            results = service.similarity_search(query, query_embedding, k=3)
+            results = service.search(query_embedding, k=3)
             
             # Print results
             print(f"Search returned {len(results)} results:")

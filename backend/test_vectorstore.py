@@ -1,26 +1,44 @@
 #!/usr/bin/env python
 """
 Test script to verify vector store operations.
+
+This module provides comprehensive testing for the vector store service,
+validating initialization, document addition, and semantic search functionality.
 """
 
 import os
 import sys
 import tempfile
 import logging
+import gc
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with standardized format
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
-# Make sure we can import from the right location
+# Ensure correct import paths
 sys.path.append('.')
 
+# Import required components
 from app.services.vectorstore import VectorStoreService, vector_store
 from app.services.embeddings import embeddings_service
 from app.api.models import DocumentChunk
 
 def test_vectorstore():
-    """Test basic vector store operations."""
+    """
+    Test basic vector store operations.
+    
+    This function validates three core functionalities:
+    1. Collection initialization with temporary storage
+    2. Singleton vector store instance access
+    3. Document addition and semantic search operations
+    
+    Returns:
+        Boolean indicating test success or failure
+    """
     print("\n=== Testing Vector Store Service ===")
     
     # Test 1: Create temporary store
@@ -86,12 +104,16 @@ def test_vectorstore():
         count_after = vector_store.collection.count()
         print(f"Document count after adding: {count_after}")
         
-        # Perform search
-        print("\nPerforming similarity search...")
+        # Memory cleanup before search
+        gc.collect()
+        
+        # Perform search - UPDATED METHOD NAME
+        print("\nPerforming semantic search...")
         query = "vector embeddings"
         query_embedding = embeddings_service.generate_embedding(query)
         
-        results = vector_store.similarity_search(query, query_embedding, k=3)
+        # Use the correct method name: 'search' instead of 'search'
+        results = vector_store.search(query_embedding, k=3)
         
         # Print results
         print(f"Search returned {len(results)} results:")
@@ -109,7 +131,11 @@ def test_vectorstore():
         return True
     except Exception as e:
         print(f"✗ Error during test: {str(e)}")
+        print(f"  Error details: {type(e).__name__}: {str(e)}")
         return False
+    finally:
+        # Ensure memory cleanup
+        gc.collect()
 
 if __name__ == "__main__":
     print("=== Vector Store Test ===")
@@ -124,4 +150,4 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         print("\n=== Tests Failed! ===")
-        sys.exit(1) 
+        sys.exit(1)

@@ -14,20 +14,23 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Helper function to resolve paths
 def get_path(relative_path):
-    """Convert relative paths to absolute paths correctly.
+    """Convert relative paths to absolute paths with normalization.
     
-    This prevents duplicate 'backend' directories when the code
-    is run from different locations.
+    This prevents duplicate 'backend' directories and resolves path inconsistencies.
     """
+    # Normalize path separators for cross-platform compatibility
+    normalized_path = relative_path.replace('\\', '/')
+    
     # If path starts with ./backend/ or backend/, use just the portion after it
-    if relative_path.startswith("./backend/"):
-        path = relative_path[10:]  # Skip ./backend/
-    elif relative_path.startswith("backend/"):
-        path = relative_path[8:]   # Skip backend/
+    if normalized_path.startswith("./backend/"):
+        path = normalized_path[10:]  # Skip ./backend/
+    elif normalized_path.startswith("backend/"):
+        path = normalized_path[8:]   # Skip backend/
     else:
-        path = relative_path
+        path = normalized_path
         
-    return os.path.join(BASE_DIR, path)
+    # Create absolute path and normalize it
+    return os.path.normpath(os.path.join(BASE_DIR, path))
 
 
 class Settings(BaseModel):
@@ -90,8 +93,8 @@ class Settings(BaseModel):
     MEMORY_SAFETY_MARGIN_MB: int = 256  # Reduced from 512 for better balance
     
     # Request Optimization
-    REQUEST_TIMEOUT_SECONDS: int = 10  # Timeout for requests
-    QUERY_TIMEOUT_MS: int = 3000  # Timeout for vector queries (3 seconds)
+    REQUEST_TIMEOUT_SECONDS: int = 20  # Timeout for requests (increased from 10)
+    QUERY_TIMEOUT_MS: int = 10000  # Timeout for vector queries (increased from 3 seconds)
     
     # Azure Configuration (used when migrating)
     AZURE_OPENAI_ENDPOINT: str = os.environ.get("AZURE_OPENAI_ENDPOINT", "")

@@ -21,7 +21,7 @@ from app.api.chat import openai_router
 from app.api.test import router as test_router  # Import test router
 from app.services.llm import setup_automatic_cleanup  # Import cleanup functions
 from app.services.vectorstore import setup_vectorstore_cleanup
-from config import settings
+from config import settings, get_path
 
 # Configure logging
 logging.basicConfig(
@@ -39,9 +39,9 @@ async def lifespan(app: FastAPI):
     Args:
         app: FastAPI application instance
     """
-    # Startup: Create necessary directories
-    os.makedirs(os.path.join("backend", "data", "uploads"), exist_ok=True)
-    os.makedirs(os.path.join("backend", "data", "processed"), exist_ok=True)
+    # Startup: Create necessary directories using proper path resolution
+    os.makedirs(get_path("data/uploads"), exist_ok=True)
+    os.makedirs(get_path("data/processed"), exist_ok=True)
     os.makedirs(settings.VECTOR_DB_PATH, exist_ok=True)
     
     # Log system resources

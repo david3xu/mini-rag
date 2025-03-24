@@ -94,7 +94,7 @@ def test_add_documents():
             # Restore original embedding model path
             settings.EMBEDDING_MODEL = original_embedding_model
 
-def test_similarity_search():
+def test_search():
     """Test performing similarity search."""
     print("\n=== Testing similarity search in vector store ===")
     
@@ -138,7 +138,7 @@ def test_similarity_search():
             query_embedding = embeddings_service.generate_embedding(query)
             
             print("\nPerforming similarity search...")
-            results = service.similarity_search(query, query_embedding, k=3)
+            results = service.search(query_embedding, k=3)
             
             # Print results
             print(f"\nSearch returned {len(results)} results:")
@@ -163,6 +163,6 @@ if __name__ == "__main__":
     # Run all tests
     test_initialization()
     test_add_documents()
-    test_similarity_search()
+    test_search()
     
     print("\n=== All tests completed ===") 
