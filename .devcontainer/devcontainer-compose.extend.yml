@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  backend:
+    # Development environment additions
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
+    # Extra dependencies for development
+    environment:
+      - PYTHONPATH=/workspace
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      
+  frontend:
+    # Development environment additions
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity 

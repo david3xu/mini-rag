@@ -67,15 +67,24 @@ mini-rag/
 - Docker and Docker Compose
 - Node.js 18+ (for local frontend development)
 - Python 3.10+ (for local backend development)
+- VS Code with Dev Containers extension (optional, for containerized development)
 
 ### Getting Started
 
 1. Clone the repository
 2. Configure environment variables in `.env.local`
-3. Start the development environment:
+3. Start the development environment using one of these methods:
+
+   a. Using Docker Compose directly:
    ```bash
    docker-compose up -d
    ```
+
+   b. Using VS Code Dev Containers:
+   - Open the project in VS Code
+   - Click on the green button in the bottom-left corner
+   - Select "Reopen in Container"
+   - VS Code will build and start the containers automatically
 
 ### Docker Development Environment
 
