@@ -10,12 +10,12 @@ Deploy the Mini-RAG backend using the following standardized commands:
 # Navigate to project root directory
 cd path/to/mini-rag
 
-# Install dependencies 
+# Install dependencies
 pip install -r backend/requirements.txt
 
-# # Run FastAPI application with development server
-# python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-# ```
+# Run FastAPI application with development server
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
 Alternative execution from backend directory:
 
@@ -68,7 +68,7 @@ curl -X POST http://localhost:8000/api/documents/upload \
   -F "files=@/path/to/your/document.pdf" \
   -H "Content-Type: multipart/form-data"
 
-# Upload multiple documents simultaneously  
+# Upload multiple documents simultaneously
 curl -X POST http://localhost:8000/api/documents/upload \
   -F "files=@/path/to/first.pdf" \
   -F "files=@/path/to/second.txt" \
@@ -100,7 +100,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
       {"role": "user", "content": "What are the memory optimization techniques in Mini-RAG?"}
     ],
     "temperature": 0.7,
-    "max_tokens": 512
+    "max_tokens": 128
   }'
 
 # OpenAI-compatible streaming request

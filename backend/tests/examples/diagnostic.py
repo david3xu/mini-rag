@@ -52,24 +52,43 @@ def test_llm_with_different_formats():
             ("Q&A", "Q: What is retrieval augmented generation? A:"),
             ("Phi-Instruct", "<s>Instruct: Explain what RAG means.\nOutput:"),
             ("Chat", "<|user|>\nExplain RAG\n<|assistant|>"),
-            ("System", "<|system|>\nYou are a helpful AI assistant.\n<|user|>\nWhat is RAG?\n<|assistant|>")
+            ("System", "<|system|>\nYou are a helpful AI assistant.\n<|user|>\nWhat is RAG?\n<|assistant|>"),
+            ("Plain Question", "What is RAG?"),
+            ("Chat-ML", "<|im_start|>user\nWhat is RAG?<|im_end|>\n<|im_start|>assistant\n"),
+            ("Chat-Llama", "[INST] What is RAG? [/INST]"),
+            ("Alpaca", "### Instruction:\nExplain what RAG means.\n\n### Response:")
         ]
         
-        success = False
+        results = []
         for name, prompt in formats:
             logger.info(f"Testing format: {name} with prompt: '{prompt}'")
             start = time.time()
             response = llm_service.generate_text(prompt, max_tokens=50)
             elapsed = time.time() - start
             
-            logger.info(f"  Response: '{response}' in {elapsed:.2f} seconds")
-            if len(response.strip()) > 0:
-                logger.info(f"✅ Format {name} produced non-empty response")
-                success = True
-            else:
-                logger.info(f"❌ Format {name} produced empty response")
+            # Clean the response for display
+            cleaned_response = response.replace('\n', ' ').strip()
+            if len(cleaned_response) > 50:
+                cleaned_response = cleaned_response[:50] + "..."
+                
+            has_output = len(response.strip()) > 0
+            results.append((name, has_output, cleaned_response, elapsed))
+            
+            # Log detailed results
+            status = "✅" if has_output else "❌"
+            logger.info(f"{status} Format: {name} ({elapsed:.2f}s)")
+            logger.info(f"  Prompt: '{prompt}'")
+            logger.info(f"  Response: '{cleaned_response}'")
+            logger.info("---")
         
-        return success
+        # Summarize results
+        working_formats = [name for name, has_output, _, _ in results if has_output]
+        if working_formats:
+            logger.info(f"Working formats: {', '.join(working_formats)}")
+            return True
+        else:
+            logger.info("No working formats found")
+            return False
     except Exception as e:
         logger.error(f"LLM formats test failed: {str(e)}")
         return False

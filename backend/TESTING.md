@@ -10,10 +10,20 @@ The backend tests are organized into the following categories:
 backend/tests/
 ├── unit/                       # Unit tests for individual components
 │   ├── api/                    # API endpoint tests
+│   │   └── test_health.py      # Tests for health endpoints
 │   └── services/               # Service implementation tests
+│       ├── test_document_processor.py # Tests for document processing
+│       ├── test_embeddings.py         # Tests for embedding service
+│       ├── test_llm.py                # Tests for LLM service
+│       └── test_vectorstore.py        # Tests for vector store
 ├── integration/                # Integration tests between components
-├── conftest.py                 # Test fixtures and configurations
-└── fixtures/                   # Test data and fixtures
+│   └── test_document_query_workflow.py # End-to-end document processing and query
+├── examples/                   # Example scripts and utilities
+│   ├── clean_duplicate_dirs.py # Utility to fix duplicate directories
+│   └── debug_tests.py          # Script for interactive debugging
+├── data/                       # Test data files
+├── fixtures/                   # Test data and fixtures
+└── conftest.py                 # Test fixtures and configurations
 ```
 
 ## Testing Architecture
@@ -43,6 +53,7 @@ The Mini-RAG testing architecture uses pytest with FastAPI's TestClient for API 
 The health endpoint tests (`tests/unit/api/test_health.py`) verify system health monitoring:
 
 1. **General Health (`/api/health`)**: Tests overall system health, including:
+
    - Vector store availability
    - Language model status
    - Resource metrics (CPU, memory)
@@ -52,6 +63,42 @@ The health endpoint tests (`tests/unit/api/test_health.py`) verify system health
 3. **Liveness (`/api/health/liveness`)**: Tests if the system is alive and functioning
 
 4. **Resource Metrics**: Tests accurate measurement of system resources
+
+## Service Tests
+
+Service tests validate the core functionality of backend services:
+
+1. **Vector Store Service** (`tests/unit/services/test_vectorstore.py`):
+
+   - Initialization and collection creation
+   - Document addition
+   - Similarity search
+
+2. **Document Processor** (`tests/unit/services/test_document_processor.py`):
+
+   - Text splitting
+   - Metadata handling
+   - Chunking strategies
+
+3. **Embedding Service** (`tests/unit/services/test_embeddings.py`):
+
+   - Embedding generation
+   - Batch processing
+   - Model handling
+
+4. **LLM Service** (`tests/unit/services/test_llm.py`):
+   - Text generation
+   - Context handling
+   - Response formatting
+
+## Integration Tests
+
+Integration tests validate the interaction between components:
+
+1. **Document Query Workflow** (`tests/integration/test_document_query_workflow.py`):
+   - End-to-end testing of document processing and querying
+   - Verifies document ingestion, embedding, storage, and retrieval
+   - Tests the complete RAG pipeline
 
 ## Running Tests
 
@@ -67,6 +114,9 @@ PYTHONPATH=$PYTHONPATH:$PWD python -m pytest
 ```bash
 # Run only API tests
 python -m pytest tests/unit/api/
+
+# Run only integration tests
+python -m pytest tests/integration/
 
 # Run a specific test file
 python -m pytest tests/unit/api/test_health.py
@@ -87,7 +137,7 @@ For debugging tests, several approaches are available:
 
 1. **Verbose Mode**: Add `-v` to see more detailed test output
 2. **Print Statements**: Use `-s` to see print output in tests
-3. **Debug Script**: Use `debug_tests.py` for interactive debugging
+3. **Debug Script**: Use `examples/debug_tests.py` for interactive debugging
 
 ## Test Maintenance
 
@@ -105,14 +155,14 @@ settings.MODEL_PATH = get_path("models/phi-2.gguf")
 
 ### Cleanup Utilities
 
-If duplicate directories are created during testing, the `clean_duplicate_dirs.py` script can fix the issue:
+If duplicate directories are created during testing, the `examples/clean_duplicate_dirs.py` script can fix the issue:
 
 ```bash
 # Standard cleanup (safe)
-python clean_duplicate_dirs.py
+python tests/examples/clean_duplicate_dirs.py
 
 # Force cleanup (when standard fails)
-python clean_duplicate_dirs.py --force
+python tests/examples/clean_duplicate_dirs.py --force
 ```
 
 ## Best Practices
@@ -121,4 +171,4 @@ python clean_duplicate_dirs.py --force
 2. Use isolated paths for test data when possible
 3. Clean up test artifacts after tests complete
 4. Keep tests independent and idempotent
-5. Avoid hardcoded paths; use the `get_path()` function 
+5. Avoid hardcoded paths; use the `get_path()` function

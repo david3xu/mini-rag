@@ -5,6 +5,7 @@ Unit tests for the API health endpoint.
 import pytest
 import psutil
 from fastapi.testclient import TestClient
+import httpx
 
 from main import app
 from app.api.health import get_resource_metrics, ResourceMetrics

@@ -169,14 +169,14 @@ class LLMService:
             logger.warning("Empty prompt provided for text generation")
             raise ValueError("Cannot generate text from empty prompt")
         
-        # Format for phi-2 prompt
-        phi_prompt = f"<s>Instruct: {prompt}\nOutput:"
+        # Use the prompt as provided, don't reformat
+        formatted_prompt = prompt
         
         try:
             logger.info(f"Generating text with max_tokens={max_tokens}, temperature={temperature}")
             
             # Apply shorter context for faster generation
-            actual_max_tokens = min(max_tokens, self._n_ctx - len(phi_prompt) // 4)
+            actual_max_tokens = min(max_tokens, self._n_ctx - len(formatted_prompt) // 4)
             
             if not stream:
                 # Generate complete response with timeout handling
@@ -186,7 +186,7 @@ class LLMService:
                 gc.collect()
                 
                 response = self.llm(
-                    phi_prompt,
+                    formatted_prompt,
                     max_tokens=actual_max_tokens,
                     temperature=temperature,
                     echo=False,
@@ -200,7 +200,7 @@ class LLMService:
                 return response["choices"][0]["text"].strip()
             else:
                 # Return generator for streaming response
-                return self._generate_streaming_response(phi_prompt, actual_max_tokens, temperature, timeout_seconds)
+                return self._generate_streaming_response(formatted_prompt, actual_max_tokens, temperature, timeout_seconds)
         except Exception as e:
             logger.error(f"Error during text generation: {str(e)}")
             raise RuntimeError(f"Failed to generate text: {str(e)}")
@@ -287,24 +287,11 @@ class LLMService:
         
         context = "\n\n".join(context_parts)
         
-        # Create RAG prompt with context and query
-        prompt = f"""
-        You are a helpful assistant that provides accurate and informative answers based on the provided documents.
+        # Create RAG prompt with a format known to work with Phi-2
+        prompt = f"<|user|>\nI have the following documents:\n\n{context}\n\nBased on these documents, answer this question: {query}\n<|assistant|>"
         
-        Answer the following query based ONLY on the information from these documents.
-        If the documents don't contain relevant information to answer the query, say "I don't have enough information to answer this question."
-        Use concise language and be direct. Keep your answer focused.
-        
-        Documents:
-        {context}
-
-        Query: {query}
-
-        Answer:
-        """
         return prompt
     
-    # Added lightweight method for quick testing
     def quick_generate(self, query: str) -> str:
         """Generate a quick response without full context loading.
         
@@ -318,22 +305,34 @@ class LLMService:
             A simple generated response
         """
         try:
-            # Short context, minimal parameters
-            prompt = f"<s>Instruct: {query}\nOutput:"
+            # Try different prompt formats that may work with Phi-2
+            prompt_formats = [
+                f"<s>Instruct: {query}\nOutput:",
+                f"<|user|>\n{query}\n<|assistant|>",
+                f"Q: {query}\nA:"
+            ]
             
-            # Memory optimization before generation
-            gc.collect()
+            # Try each format until we get a non-empty response
+            for prompt in prompt_formats:
+                # Memory optimization before generation
+                gc.collect()
+                
+                # Generate with minimal parameters
+                response = self.llm(
+                    prompt,
+                    max_tokens=50,
+                    temperature=0.7,
+                    echo=False,
+                    stop=["</s>", "<s>"]
+                )
+                
+                result = response["choices"][0]["text"].strip()
+                if result:
+                    logger.info(f"Successful prompt format: {prompt.split(query)[0]}")
+                    return result
             
-            # Generate with minimal parameters
-            response = self.llm(
-                prompt,
-                max_tokens=50,
-                temperature=0.7,
-                echo=False,
-                stop=["</s>", "<s>"]
-            )
-            
-            return response["choices"][0]["text"].strip()
+            # If all formats failed, return a default message
+            return "I'm having trouble generating a response right now."
         except Exception as e:
             logger.error(f"Error in quick generation: {str(e)}")
             return f"Error generating response: {str(e)}"

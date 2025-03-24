@@ -5,17 +5,8 @@
     "./devcontainer-compose.extend.yml"
   ],
   "service": "backend",
-  "workspaceFolder": "/workspace",
+  "workspaceFolder": "/workspace/mini-rag",
   
-  "features": {
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.10"
-    },
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "18"
-    }
-  },
-
   "customizations": {
     "vscode": {
       "extensions": [

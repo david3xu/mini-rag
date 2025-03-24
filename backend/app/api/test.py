@@ -28,6 +28,11 @@ class TestResponse(BaseModel):
     elapsed_ms: float
     mode: str
 
+class PromptFormatRequest(BaseModel):
+    """Request to test a specific prompt format."""
+    query: str
+    format: str = "chat"  # chat, instruct, qa, plain
+
 @router.post("/llm-only", response_model=TestResponse)
 async def test_llm_only(request: TestQueryRequest):
     """
@@ -156,6 +161,56 @@ async def test_simple_request(request: TestQueryRequest):
                 status_code=500,
                 detail=f"Test failed after {elapsed_ms:.2f}ms: {str(e)}"
             )
+
+@router.post("/prompt-format", response_model=TestResponse)
+async def test_prompt_format(request: PromptFormatRequest):
+    """
+    Test different prompt formats for the LLM.
+    
+    Args:
+        request: Query and format to test
+        
+    Returns:
+        Generated text with timing information
+    """
+    start_time = time.time()
+    
+    try:
+        # Format the prompt according to the requested format
+        query = request.query
+        
+        if request.format == "chat":
+            prompt = f"<|user|>\n{query}\n<|assistant|>"
+        elif request.format == "instruct":
+            prompt = f"<s>Instruct: {query}\nOutput:"
+        elif request.format == "qa":
+            prompt = f"Q: {query}\nA:"
+        elif request.format == "llama":
+            prompt = f"[INST] {query} [/INST]"
+        elif request.format == "alpaca":
+            prompt = f"### Instruction:\n{query}\n\n### Response:"
+        elif request.format == "chatml":
+            prompt = f"<|im_start|>user\n{query}<|im_end|>\n<|im_start|>assistant\n"
+        else:  # plain
+            prompt = query
+        
+        # Generate text directly with the formatted prompt
+        result = llm_service.generate_text(prompt, max_tokens=100)
+        
+        # Calculate elapsed time
+        elapsed_ms = (time.time() - start_time) * 1000
+        
+        return TestResponse(
+            result=result or "No response generated",
+            elapsed_ms=elapsed_ms,
+            mode=f"format-{request.format}"
+        )
+    except Exception as e:
+        elapsed_ms = (time.time() - start_time) * 1000
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Prompt format test failed after {elapsed_ms:.2f}ms: {str(e)}"
+        )
 
 @router.get("/ping")
 async def ping_test():
