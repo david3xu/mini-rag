@@ -13,6 +13,7 @@ import gc
 import logging
 import threading
 import psutil
+import multiprocessing
 
 from config import settings
 
@@ -44,7 +45,17 @@ class LLMService:
         self._kv_cache = None
         self._last_prompt = None
         
+        # Determine optimal thread count for generation
+        try:
+            # Get physical core count (non-hyperthreaded)
+            physical_cores = psutil.cpu_count(logical=False) or 1
+            self._n_threads = min(physical_cores, settings.MODEL_N_THREADS)
+        except:
+            # Fallback to standard approach
+            self._n_threads = max(multiprocessing.cpu_count() // 2, 1)
+            
         logger.info(f"LLM service initialized with model path: {self._model_path}")
+        logger.info(f"Thread configuration: using {self._n_threads} threads for inference")
         
         # Check if model file exists
         if not os.path.exists(self._model_path):
@@ -81,13 +92,13 @@ class LLMService:
                         n_ctx=self._n_ctx,
                         n_batch=self._n_batch,
                         n_gpu_layers=self._n_gpu_layers,
+                        n_threads=self._n_threads,  # Set thread count here during initialization
                         verbose=False,
-                        # Add these params for better performance
-                        n_threads=min(4, os.cpu_count() or 1),  # Limit thread count
+                        # Memory optimization parameters
                         use_mlock=False,  # Don't lock memory
                         use_mmap=True,  # Use memory mapping
                     )
-                    logger.info("LLM model loaded successfully")
+                    logger.info(f"LLM model loaded successfully with {self._n_threads} threads")
                 except Exception as e:
                     self._is_loading = False
                     logger.error(f"Error loading LLM model: {str(e)}")
@@ -184,13 +195,9 @@ class LLMService:
             # Apply shorter context for faster generation
             actual_max_tokens = min(max_tokens, self._n_ctx - len(formatted_prompt) // 4)
             
-            # Set thread count for generation
-            if thread_count is None:
-                thread_count = min(4, os.cpu_count() or 1)
-            else:
-                thread_count = max(1, min(thread_count, os.cpu_count() or 1))
-            
-            logger.info(f"Using {thread_count} threads for generation")
+            # Log thread count info but don't pass it to generation call
+            if thread_count is not None:
+                logger.info(f"Thread count specified: {thread_count} (note: threads configured during model initialization)")
             
             # Check if we can reuse KV cache
             cache_hit = False
@@ -212,13 +219,13 @@ class LLMService:
                 if cache_hit:
                     cache_params = {"cache": self._kv_cache}
                 
+                # Call LLM without n_threads parameter (configured during initialization)
                 response = self.llm(
                     formatted_prompt,
                     max_tokens=actual_max_tokens,
                     temperature=temperature,
                     echo=False,
                     stop=["</s>", "<s>"],  # Stop at special tokens
-                    n_threads=thread_count,
                     **cache_params
                 )
                 
@@ -234,13 +241,13 @@ class LLMService:
                 return response["choices"][0]["text"].strip()
             else:
                 # Return generator for streaming response
-                return self._generate_streaming_response(formatted_prompt, actual_max_tokens, temperature, timeout_seconds, thread_count)
+                return self._generate_streaming_response(formatted_prompt, actual_max_tokens, temperature, timeout_seconds)
         except Exception as e:
             logger.error(f"Error during text generation: {str(e)}")
             raise RuntimeError(f"Failed to generate text: {str(e)}")
     
     def _generate_streaming_response(
-        self, prompt: str, max_tokens: int, temperature: float, timeout_seconds: int, thread_count: int = 1
+        self, prompt: str, max_tokens: int, temperature: float, timeout_seconds: int
     ) -> Generator[str, None, None]:
         """Generate streaming text response.
         
@@ -249,7 +256,6 @@ class LLMService:
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             timeout_seconds: Maximum generation time
-            thread_count: Number of threads to use
             
         Yields:
             Text chunks as they are generated
@@ -265,14 +271,14 @@ class LLMService:
             # Memory optimization: before large operation
             gc.collect()
             
+            # Call LLM without n_threads parameter (configured during initialization)
             for token in self.llm(
                 prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 echo=False,
                 stream=True,
-                stop=["</s>", "<s>"],  # Stop at special tokens
-                n_threads=thread_count
+                stop=["</s>", "<s>"]  # Stop at special tokens
             ):
                 # Check timeout
                 if time.time() - start_time > timeout_seconds:
